@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Time Warp</title>
+<link rel="stylesheet" href="styles.css"/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div class="stage-bg"></div>
+<div id="root"></div>
+
+<script type="text/babel" src="orb.jsx"></script>
+<script type="text/babel" src="screens-1.jsx"></script>
+<script type="text/babel" src="screens-2.jsx"></script>
+<script type="text/babel" src="screens-3.jsx"></script>
+<script type="text/babel" src="capture-variants.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const TWEAKS = /*EDITMODE-BEGIN*/{
+  "material": "plasma",
+  "sound": false,
+  "worldStyle": "globe",
+  "capture": "orb"
+}/*EDITMODE-END*/;
+
+const SCREENS = [
+  { id: 'lock',      label: 'Lock' },
+  { id: 'onboard',   label: 'Intro' },
+  { id: 'capture',   label: 'Capture' },
+  { id: 'world',     label: 'World' },
+  { id: 'history',   label: 'Week' },
+  { id: 'insights',  label: 'Cohort' },
+];
+
+const CAPTURE_VARIANTS = [
+  { id: 'orb',      label: 'Orb · taffy' },
+  { id: 'timeline', label: 'Elastic timeline' },
+  { id: 'dial',     label: 'Dial · twist' },
+  { id: 'squeeze',  label: 'Squeeze · press' },
+  { id: 'draw',     label: 'Draw the hour' },
+  { id: 'pinch',    label: 'Pinch · two thumbs' },
+];
+
+function App() {
+  const [screen, setScreen] = useState(() => {
+    return localStorage.getItem('tw_screen') || 'lock';
+  });
+  const [tweaks, setTweaks] = useState(TWEAKS);
+  const [editMode, setEditMode] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('tw_screen', screen);
+  }, [screen]);
+
+  // Tweaks host protocol
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setEditMode(true);
+      if (e.data?.type === '__deactivate_edit_mode') setEditMode(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const update = (k, v) => {
+    const next = { ...tweaks, [k]: v };
+    setTweaks(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [k]: v } }, '*');
+  };
+
+  // Sound: ambient hum via WebAudio
+  useEffect(() => {
+    if (!tweaks.sound) return;
+    let ctx, osc1, osc2, gain;
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      osc1 = ctx.createOscillator(); osc2 = ctx.createOscillator();
+      gain = ctx.createGain();
+      osc1.frequency.value = 110; osc2.frequency.value = 165;
+      osc1.type = 'sine'; osc2.type = 'sine';
+      gain.gain.value = 0.02;
+      osc1.connect(gain); osc2.connect(gain); gain.connect(ctx.destination);
+      osc1.start(); osc2.start();
+    } catch(e) {}
+    return () => { try { osc1?.stop(); osc2?.stop(); ctx?.close(); } catch(e){} };
+  }, [tweaks.sound]);
+
+  return (
+    <>
+      <OrbDefs/>
+      <div className="phone-shell grain">
+        {screen === 'lock' && <LockScreen onTap={() => setScreen('capture')}/>}
+        {screen === 'onboard' && <Onboarding onDone={() => setScreen('capture')}/>}
+        {screen === 'capture' && (() => {
+          const common = { onSubmit: () => setScreen('world'), material: tweaks.material };
+          switch (tweaks.capture) {
+            case 'timeline': return <CaptureTimeline {...common}/>;
+            case 'dial':     return <CaptureDial {...common}/>;
+            case 'squeeze':  return <CaptureSqueeze {...common}/>;
+            case 'draw':     return <CaptureDraw {...common}/>;
+            case 'pinch':    return <CapturePinch {...common}/>;
+            default:         return <CaptureScreen {...common}/>;
+          }
+        })()}
+        {screen === 'world' && <WorldScreen worldStyle={tweaks.worldStyle} onBack={() => setScreen('history')}/>}
+        {screen === 'history' && <HistoryScreen onBack={() => setScreen('insights')}/>}
+        {screen === 'insights' && <InsightsScreen onBack={() => setScreen('lock')}/>}
+      </div>
+
+      {/* screen jumper */}
+      <div className="nav-dots">
+        {SCREENS.map(s => (
+          <button
+            key={s.id}
+            data-active={screen === s.id}
+            title={s.label}
+            onClick={() => setScreen(s.id)}/>
+        ))}
+      </div>
+
+      {editMode && (
+        <div className="tweaks-panel">
+          <h4>◐ TWEAKS</h4>
+          <div className="tweaks-row">
+            <label>Capture UI</label>
+            <div className="chip-row">
+              {CAPTURE_VARIANTS.map(v => (
+                <button key={v.id} className="chip"
+                  data-active={tweaks.capture === v.id}
+                  onClick={() => { update('capture', v.id); setScreen('capture'); }}>{v.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="tweaks-row">
+            <label>Orb Material</label>
+            <div className="chip-row">
+              {['plasma','chrome','glass','liquid'].map(m => (
+                <button key={m} className="chip"
+                  data-active={tweaks.material === m}
+                  onClick={() => update('material', m)}>{m}</button>
+              ))}
+            </div>
+          </div>
+          <div className="tweaks-row">
+            <label>Ambient Hum</label>
+            <div className="chip-row">
+              <button className="chip" data-active={tweaks.sound} onClick={() => update('sound', true)}>on</button>
+              <button className="chip" data-active={!tweaks.sound} onClick={() => update('sound', false)}>off</button>
+            </div>
+          </div>
+          <div className="tweaks-row">
+            <label>World View Style</label>
+            <div className="chip-row">
+              {['globe','particles','grid'].map(w => (
+                <button key={w} className="chip"
+                  data-active={tweaks.worldStyle === w}
+                  onClick={() => update('worldStyle', w)}>{w}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{
+            marginTop: 12, paddingTop: 12,
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+            fontFamily: 'var(--mono)', fontSize: 9,
+            color: 'var(--ink-faint)', letterSpacing: '0.1em',
+          }}>
+            USE DOTS ▸ TO NAVIGATE SCREENS
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
