@@ -45,7 +45,6 @@ function loadTweaks() {
 }
 
 const SCREENS = [
-  { id: 'lock',      label: 'Lock' },
   { id: 'onboard',   label: 'Intro' },
   { id: 'capture',   label: 'Capture' },
   { id: 'world',     label: 'World' },
@@ -63,13 +62,13 @@ const CAPTURE_VARIANTS = [
 ];
 
 function pickInitialScreen() {
-  // Respect ?start=capture (from notification deep-links) then prior session
-  // then: first-timers start in the intro; returning users land on the lock.
+  // Respect deep-links (?start=capture via notification), then last session,
+  // then: first-timers start in the intro; returning users go straight to capture.
   const hash = (window.location.hash || '').replace(/^#/, '');
   if (hash && SCREENS.some((s) => s.id === hash)) return hash;
   const stored = localStorage.getItem('tw_screen');
   if (stored && SCREENS.some((s) => s.id === stored)) return stored;
-  return window.TWProfile && window.TWProfile.hasOnboarded() ? 'lock' : 'onboard';
+  return window.TWProfile && window.TWProfile.hasOnboarded() ? 'capture' : 'onboard';
 }
 
 function App() {
@@ -126,8 +125,7 @@ function App() {
   return (
     <>
       <OrbDefs/>
-      <div className="phone-shell grain">
-        {screen === 'lock' && <LockScreen onTap={() => setScreen(window.TWProfile?.hasOnboarded() ? 'capture' : 'onboard')}/>}
+      <div className="app-root">
         {screen === 'onboard' && <Onboarding onDone={() => setScreen('capture')}/>}
         {screen === 'capture' && (() => {
           const common = { onSubmit: () => setScreen('world'), material: tweaks.material };
@@ -142,18 +140,7 @@ function App() {
         })()}
         {screen === 'world' && <WorldScreen worldStyle={tweaks.worldStyle} onBack={() => setScreen('history')}/>}
         {screen === 'history' && <HistoryScreen onBack={() => setScreen('insights')}/>}
-        {screen === 'insights' && <InsightsScreen onBack={() => setScreen('lock')}/>}
-      </div>
-
-      {/* screen jumper */}
-      <div className="nav-dots">
-        {SCREENS.map(s => (
-          <button
-            key={s.id}
-            data-active={screen === s.id}
-            title={s.label}
-            onClick={() => setScreen(s.id)}/>
-        ))}
+        {screen === 'insights' && <InsightsScreen onBack={() => setScreen('capture')}/>}
       </div>
 
       {editMode && (

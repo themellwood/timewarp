@@ -45,7 +45,6 @@ function LockScreen({ onTap }) {
       `,
     }}>
       <div className="starfield"/>
-      <StatusBar/>
 
       {/* lockscreen time */}
       <div style={{
@@ -152,7 +151,6 @@ function LockScreen({ onTap }) {
         </div>
       </div>
 
-      <HomeIndicator/>
     </div>
   );
 }
@@ -199,7 +197,6 @@ function Onboarding({ onDone }) {
       `,
     }}>
       <div className="starfield" style={{ opacity: 0.5 }}/>
-      <StatusBar/>
 
       {/* illustration */}
       <div style={{
@@ -281,7 +278,6 @@ function Onboarding({ onDone }) {
         </button>
       </div>
 
-      <HomeIndicator/>
     </div>
   );
 }
@@ -327,7 +323,6 @@ function DemographicsStep({ stepIndex, totalSteps, onDone }) {
       `,
     }}>
       <div className="starfield" style={{ opacity: 0.5 }}/>
-      <StatusBar/>
 
       <div style={{ position: 'absolute', top: 70, left: 32, right: 32 }}>
         <div className="eyebrow" style={{ marginBottom: 16 }}>
@@ -422,7 +417,6 @@ function DemographicsStep({ stepIndex, totalSteps, onDone }) {
         </button>
       </div>
 
-      <HomeIndicator/>
     </div>
   );
 }

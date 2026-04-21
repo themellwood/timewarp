@@ -62,7 +62,6 @@ function WorldScreen({ onBack, worldStyle = 'globe' }) {
       background: `radial-gradient(ellipse at 50% 0%, rgba(79, 233, 255, 0.14) 0%, transparent 55%), #000004`,
     }}>
       <div className="starfield" style={{ opacity: 0.9 }}/>
-      <StatusBar/>
 
       <TopBar onBack={onBack} label="APRIL 20 · WORLDWIDE"/>
 
@@ -162,7 +161,6 @@ function WorldScreen({ onBack, worldStyle = 'globe' }) {
         </div>
       </div>
 
-      <HomeIndicator/>
     </div>
   );
 }
@@ -472,7 +470,6 @@ function HistoryScreen({ onBack }) {
       background: `radial-gradient(ellipse at 100% 0%, rgba(255, 62, 165, 0.1) 0%, transparent 50%), #050008`,
     }}>
       <div className="starfield" style={{ opacity: 0.3 }}/>
-      <StatusBar/>
       <TopBar onBack={onBack} label="YOUR WEEK"/>
 
       <div style={{ position: 'absolute', top: 104, left: 28, right: 28 }}>
@@ -530,7 +527,6 @@ function HistoryScreen({ onBack }) {
           }}/>
         </button>
       </div>
-      <HomeIndicator/>
     </div>
   );
 }
@@ -594,7 +590,6 @@ function InsightsScreen({ onBack }) {
       background: `radial-gradient(ellipse at 50% 110%, rgba(123, 44, 255, 0.2) 0%, transparent 50%), #050008`,
     }}>
       <div className="starfield" style={{ opacity: 0.4 }}/>
-      <StatusBar/>
       <TopBar onBack={onBack} label="WHO FELT IT LIKE YOU"/>
 
       <div style={{ position: 'absolute', top: 100, left: 28, right: 28 }}>
@@ -613,7 +608,6 @@ function InsightsScreen({ onBack }) {
       }} className="no-scrollbar">
         {cohorts.sort((a, b) => b.match - a.match).map((c, i) => <CohortRow key={i} {...c}/>)}
       </div>
-      <HomeIndicator/>
     </div>
   );
 }

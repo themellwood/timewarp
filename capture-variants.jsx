@@ -16,7 +16,6 @@ function CaptureShell({ children, stretch, onSubmit, hint, label, sub, minutes, 
       transition: 'background 0.5s ease',
     }}>
       <div className="starfield" style={{ opacity: 0.4 }}/>
-      <StatusBar/>
 
       <div style={{
         position: 'absolute', top: 56, left: 28, right: 28,
@@ -73,7 +72,6 @@ function CaptureShell({ children, stretch, onSubmit, hint, label, sub, minutes, 
         )}
       </div>
 
-      <HomeIndicator/>
     </div>
   );
 }

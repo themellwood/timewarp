@@ -40,7 +40,6 @@ function CaptureScreen({ onSubmit, material = 'plasma' }) {
       transition: 'background 0.6s ease',
     }}>
       <div className="starfield" style={{ opacity: 0.4 }}/>
-      <StatusBar/>
 
       {/* TOP: mirror prompt */}
       <div style={{
@@ -188,7 +187,6 @@ function CaptureScreen({ onSubmit, material = 'plasma' }) {
         </div>
       )}
 
-      <HomeIndicator/>
     </div>
   );
 }
