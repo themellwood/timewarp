@@ -10,7 +10,7 @@ function formatCount(n) {
 }
 
 // ---------- WORLD: day-level aggregate ----------
-function WorldScreen({ onBack, worldStyle = 'globe' }) {
+function WorldScreen({ onBack, onCompare, worldStyle = 'globe' }) {
   const [now, setNow] = useStateS3(0);
   useEffectS3(() => {
     let t = 0;
@@ -63,7 +63,7 @@ function WorldScreen({ onBack, worldStyle = 'globe' }) {
     }}>
       <div className="starfield" style={{ opacity: 0.9 }}/>
 
-      <TopBar onBack={onBack} label="APRIL 20 · WORLDWIDE"/>
+      <TopBar onBack={onBack} label={`${new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric' }).toUpperCase()} · WORLDWIDE`}/>
 
       <div style={{
         position: 'absolute',
@@ -148,7 +148,7 @@ function WorldScreen({ onBack, worldStyle = 'globe' }) {
 
         {/* Footer CTA */}
         <div style={{ padding: '16px 20px 0' }}>
-          <button style={{
+          <button onClick={onCompare} style={{
             width: '100%', padding: '16px',
             borderRadius: 18,
             background: 'linear-gradient(135deg, rgba(255,62,165,0.15), rgba(123,44,255,0.15))',

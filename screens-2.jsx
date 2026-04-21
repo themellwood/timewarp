@@ -2,7 +2,29 @@
 
 const { useState: useStateS2, useEffect: useEffectS2, useRef: useRefS2 } = React;
 
-function CaptureScreen({ onSubmit, material = 'plasma' }) {
+// Top-left circular glyph button — used for the calendar entry-point into
+// the week-history screen. Matches the round back-button style in screens-3.
+function CalendarButton({ onClick }) {
+  return (
+    <button onClick={onClick} aria-label="Open week" style={{
+      position: 'absolute', top: 18, left: 18, zIndex: 6,
+      width: 40, height: 40, borderRadius: '50%',
+      background: 'rgba(255,255,255,0.06)',
+      backdropFilter: 'blur(20px)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      color: '#fff', cursor: 'pointer',
+      display: 'grid', placeItems: 'center',
+    }}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="1.5" y="2.5" width="13" height="12" rx="2" stroke="#fff" strokeWidth="1.3"/>
+        <path d="M1.5 6h13" stroke="#fff" strokeWidth="1.3"/>
+        <path d="M5 1.5v2M11 1.5v2" stroke="#fff" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+    </button>
+  );
+}
+
+function CaptureScreen({ onSubmit, onOpenHistory, material = 'plasma' }) {
   const [stretch, setStretch] = useStateS2(0);
   const [phase, setPhase] = useStateS2('ask'); // ask -> pulling -> submitting -> done
   const [hasDragged, setHasDragged] = useStateS2(false);
@@ -41,16 +63,16 @@ function CaptureScreen({ onSubmit, material = 'plasma' }) {
     }}>
       <div className="starfield" style={{ opacity: 0.4 }}/>
 
+      {/* Calendar -> week history */}
+      {onOpenHistory && <CalendarButton onClick={onOpenHistory}/>}
+
       {/* TOP: mirror prompt */}
       <div style={{
-        position: 'absolute', top: 56, left: 28, right: 28,
+        position: 'absolute', top: 72, left: 28, right: 28,
         textAlign: 'center',
         opacity: phase === 'submitting' ? 0 : 1,
         transition: 'opacity 0.6s',
       }}>
-        <div className="eyebrow" style={{ marginBottom: 14 }}>
-          2:47 PM · MONDAY
-        </div>
         <div className="serif" style={{
           fontSize: 30, lineHeight: 1.15,
           color: '#fff', letterSpacing: '-0.02em',
@@ -191,4 +213,4 @@ function CaptureScreen({ onSubmit, material = 'plasma' }) {
   );
 }
 
-Object.assign(window, { CaptureScreen });
+Object.assign(window, { CaptureScreen, CalendarButton });
