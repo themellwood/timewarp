@@ -74,7 +74,9 @@ function Orb({
 
   // Simulation state lives in refs (doesn't trigger rerender)
   const sim = oUseRef(null);
-  const pointer = oUseRef({ active: false, x: 0, y: 0, grabIdx: -1, wasActive: false });
+  // grabs: list of {i, offsetX, offsetY, weight} captured at press-down so the
+  // pointer drags a cohesive "blob" of the surface, not just one vertex.
+  const pointer = oUseRef({ active: false, x: 0, y: 0, grabs: [], wasActive: false });
   const timeRef = oUseRef(0);
 
   // Init vertex ring. Rest positions (rx,ry) stay fixed at the original circle
@@ -115,8 +117,8 @@ function Orb({
       if (s) {
         const { verts, cx, cy } = s;
         const N = verts.length;
-        const DAMP = 0.78;      // velocity damping
-        const NEIGHBOR = 0.14;  // neighbor cohesion — keeps surface smooth
+        const DAMP = 0.82;      // velocity damping (slightly less than before for more bounce)
+        const NEIGHBOR = 0.18;  // neighbor cohesion — keeps surface smooth under big deformations
         const BREATH = Math.sin(timeRef.current * 0.9) * 0.8;
         const dragging = pointer.current.active;
 
@@ -130,27 +132,29 @@ function Orb({
         }
         pointer.current.wasActive = dragging;
 
-        // Pointer pull — direct displacement + velocity nudge for juicy response
+        // Pointer pull — putty stretch. Vertices in the grab cluster are glued
+        // to (pointer + captured offset), so the surface translates rigidly
+        // under the finger while neighbor cohesion smears the rest of the blob
+        // toward it. This is what makes it feel like stretching taffy vs. a
+        // rubber ball bouncing back.
         if (dragging) {
           const px = pointer.current.x, py = pointer.current.y;
-          for (let i = 0; i < N; i++) {
-            const v = verts[i];
-            const dx = px - v.x, dy = py - v.y;
-            const d2 = dx*dx + dy*dy;
-            const RADIUS = 130;
-            if (d2 < RADIUS * RADIUS) {
-              const d = Math.sqrt(d2) || 0.0001;
-              const falloff = Math.pow(1 - d / RADIUS, 1.5);
-              v.vx += (dx / d) * falloff * 1.8;
-              v.vy += (dy / d) * falloff * 1.8;
-            }
+          const grabs = pointer.current.grabs;
+          for (let k = 0; k < grabs.length; k++) {
+            const g = grabs[k];
+            const v = verts[g.i];
+            const tx = px + g.offsetX;
+            const ty = py + g.offsetY;
+            // Position-based pull: strong enough to overpower damping within 1–2 frames.
+            const pull = 0.55 * g.weight;
+            v.vx += (tx - v.x) * pull;
+            v.vy += (ty - v.y) * pull;
           }
         }
 
-        // Spring back to anchors — STIFF while dragging (for responsiveness with
-        // neighbor smoothing) but very soft when released, so shape is preserved.
-        // Breath is applied as a small radial offset to anchors, not added stiffness.
-        const STIFF = dragging ? 0.10 : 0.015;
+        // Spring back to anchors — essentially OFF while dragging (plastic
+        // deformation) and very soft when released so the baked shape is held.
+        const STIFF = dragging ? 0.006 : 0.015;
         for (let i = 0; i < N; i++) {
           const v = verts[i];
           const ang = Math.atan2(v.ay - cy, v.ax - cx) || 0;
@@ -196,9 +200,12 @@ function Orb({
         // Map: smaller area OR wider-than-tall → negative (flew).
         // Larger area OR taller-than-wide → positive (dragged).
         // Area contributes more strongly since pinching shrinks area.
-        const areaSig = Math.max(-1, Math.min(1, (areaRatio - 1) * 1.4));
-        const aspectSig = Math.max(-1, Math.min(1, (aspect - 1) * 1.3));
-        const newStretch = Math.max(-1, Math.min(1, areaSig * 0.55 + aspectSig * 0.55));
+        // Coefficients tuned so a moderate pull (~30–40% bbox change) already
+        // registers as a clear "dragged" / "flew" response instead of needing
+        // near-destructive deformation to move the needle.
+        const areaSig = Math.max(-1, Math.min(1, (areaRatio - 1) * 2.2));
+        const aspectSig = Math.max(-1, Math.min(1, (aspect - 1) * 1.9));
+        const newStretch = Math.max(-1, Math.min(1, areaSig * 0.5 + aspectSig * 0.7));
         setDerivedS(newStretch);
         setHue(stretchToHue(newStretch));
         onStretchChange?.(newStretch);
@@ -225,9 +232,39 @@ function Orb({
     if (!interactive) return;
     e.preventDefault();
     updatePointer(e, true);
+
+    // Capture which vertices get "grabbed" + their offsets from the pointer.
+    // These stay constant for the whole drag, so the grabbed cluster follows
+    // the finger as a rigid group and the rest of the surface stretches
+    // toward it via neighbor cohesion.
+    const s = sim.current; if (!s) return;
+    const px = pointer.current.x, py = pointer.current.y;
+    const GRAB_RADIUS = size * 0.32;
+    const grabs = [];
+    for (let i = 0; i < s.verts.length; i++) {
+      const v = s.verts[i];
+      const dx = v.x - px, dy = v.y - py;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < GRAB_RADIUS) {
+        const w = Math.pow(1 - d / GRAB_RADIUS, 1.3);
+        grabs.push({ i, offsetX: dx, offsetY: dy, weight: w });
+      }
+    }
+    // If the press was outside the orb entirely, grab the 3 nearest vertices
+    // so the user can still pull from the edge of the canvas.
+    if (grabs.length === 0) {
+      const ranked = s.verts
+        .map((v, i) => ({ i, d: Math.hypot(v.x - px, v.y - py) }))
+        .sort((a, b) => a.d - b.d);
+      for (let k = 0; k < Math.min(3, ranked.length); k++) {
+        const v = s.verts[ranked[k].i];
+        grabs.push({ i: ranked[k].i, offsetX: v.x - px, offsetY: v.y - py, weight: 1 - k * 0.25 });
+      }
+    }
+    pointer.current.grabs = grabs;
   };
   const onMoveGlobal = (e) => { if (pointer.current.active) updatePointer(e); };
-  const onUpGlobal = () => { pointer.current.active = false; };
+  const onUpGlobal = () => { pointer.current.active = false; pointer.current.grabs = []; };
 
   oUseEffect(() => {
     window.addEventListener('mousemove', onMoveGlobal);
