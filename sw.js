@@ -2,7 +2,7 @@
  * App-shell cache + notification click handling. Kept intentionally small.
  */
 
-const VERSION = 'tw-v7';
+const VERSION = 'tw-v8';
 const SHELL = [
   './',
   'index.html',
@@ -46,8 +46,11 @@ self.addEventListener('fetch', (e) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
 
-  // Network-first for API / data calls so aggregates stay fresh.
-  const isLive = url.hostname.startsWith('api.') || url.hostname.startsWith('data.');
+  // Network-first for Worker API and R2 data — never cache, always fresh.
+  // Matches workers.dev, r2.dev, and any custom api./data. subdomains.
+  const h = url.hostname;
+  const isLive = h.includes('workers.dev') || h.includes('r2.dev')
+              || h.startsWith('api.') || h.startsWith('data.');
   if (isLive) {
     e.respondWith((async () => {
       try { return await fetch(request); }
@@ -59,7 +62,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Cache-first for the shell; update in the background.
+  // Cache-first for the app shell; update in the background.
   e.respondWith((async () => {
     const cached = await caches.match(request);
     const fetchPromise = fetch(request).then((res) => {
@@ -68,7 +71,7 @@ self.addEventListener('fetch', (e) => {
         caches.open(VERSION).then((c) => c.put(request, clone)).catch(() => {});
       }
       return res;
-    }).catch(() => cached);
+    }).catch(() => cached || new Response('', { status: 503 }));
     return cached || fetchPromise;
   })());
 });
