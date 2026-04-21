@@ -141,6 +141,31 @@ export default {
       });
     }
 
+    // Per-user history — last N days of this anon_id's submissions.
+    // Not cached at the edge so the caller sees their latest row immediately
+    // after posting. anon_id is pseudonymous but treat it as a secret of the
+    // device: never log it, never echo it, never index on third parties.
+    if (url.pathname === '/me' && req.method === 'GET') {
+      const anonId = url.searchParams.get('anon_id') || '';
+      if (anonId.length < 8 || anonId.length > 64) {
+        return json({ error: 'anon_id' }, { status: 400 });
+      }
+      const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') || 30)));
+      const since = Math.floor(Date.now() / 1000) - days * 24 * 3600;
+      const rows = await env.DB.prepare(
+        `SELECT ts, stretch, minutes, label
+         FROM submissions WHERE anon_id = ? AND ts >= ?
+         ORDER BY ts ASC LIMIT 1000`
+      ).bind(anonId, since).all<{ ts: number; stretch: number; minutes: number; label: string }>();
+      return json({
+        generatedAt: Date.now(),
+        days,
+        submissions: rows.results || [],
+      }, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
+
     return json({ error: 'not found' }, { status: 404 });
   },
 

@@ -6,7 +6,7 @@
 const { useState: useCapAlt, useEffect: useECapAlt, useRef: useRCapAlt } = React;
 
 // Shared shell (prompt at top, submit at bottom)
-function CaptureShell({ children, stretch, onSubmit, onOpenHistory, hint, label, sub, minutes, hue, hasInteracted, allowSubmit }) {
+function CaptureShell({ children, stretch, onSubmit, onOpenHistory, onOpenProfile, hint, label, sub, minutes, hue, hasInteracted, allowSubmit }) {
   return (
     <div className="screen" style={{
       background: `
@@ -18,6 +18,7 @@ function CaptureShell({ children, stretch, onSubmit, onOpenHistory, hint, label,
       <div className="starfield" style={{ opacity: 0.4 }}/>
 
       {onOpenHistory && window.CalendarButton && <window.CalendarButton onClick={onOpenHistory}/>}
+      {onOpenProfile && window.ProfileButton && <window.ProfileButton onClick={onOpenProfile}/>}
 
       <div style={{
         position: 'absolute', top: 72, left: 28, right: 28,
@@ -90,7 +91,7 @@ function readout(stretch) {
 // Drag the endpoint of a rubber-band timeline.
 // The band represents the hour; if you drag it short = flew, long = dragged.
 // ============================================================
-function CaptureTimeline({ onSubmit, onOpenHistory }) {
+function CaptureTimeline({ onSubmit, onOpenHistory, onOpenProfile }) {
   const [stretch, setStretch] = useCapAlt(0);
   const [dragging, setDragging] = useCapAlt(false);
   const [hasInteracted, setHasInteracted] = useCapAlt(false);
@@ -131,7 +132,7 @@ function CaptureTimeline({ onSubmit, onOpenHistory }) {
   const bandColor = `oklch(0.75 0.3 ${ro.hue})`;
 
   return (
-    <CaptureShell {...ro} stretch={stretch} onSubmit={onSubmit} onOpenHistory={onOpenHistory}
+    <CaptureShell {...ro} stretch={stretch} onSubmit={onSubmit} onOpenHistory={onOpenHistory} onOpenProfile={onOpenProfile}
       hint="grab & stretch the hour" hasInteracted={hasInteracted}>
       {/* Centered stretchable band */}
       <div style={{
@@ -223,7 +224,7 @@ function CaptureTimeline({ onSubmit, onOpenHistory }) {
 // VARIANT B — Dial / Vinyl
 // Rotate a circular dial. Twist CCW = fast, CW = slow.
 // ============================================================
-function CaptureDial({ onSubmit, onOpenHistory }) {
+function CaptureDial({ onSubmit, onOpenHistory, onOpenProfile }) {
   const [stretch, setStretch] = useCapAlt(0);
   const [hasInteracted, setHasInteracted] = useCapAlt(false);
   const [dragging, setDragging] = useCapAlt(false);
@@ -292,7 +293,7 @@ function CaptureDial({ onSubmit, onOpenHistory }) {
   const rotation = accumAngle.current;
 
   return (
-    <CaptureShell {...ro} stretch={stretch} onSubmit={onSubmit} onOpenHistory={onOpenHistory}
+    <CaptureShell {...ro} stretch={stretch} onSubmit={onSubmit} onOpenHistory={onOpenHistory} onOpenProfile={onOpenProfile}
       hint="twist the dial" hasInteracted={hasInteracted}>
       <div style={{
         position: 'absolute', left: '50%', top: '50%',
@@ -393,7 +394,7 @@ function CaptureDial({ onSubmit, onOpenHistory }) {
 // VARIANT C — Squeeze / Pressure
 // Hold & press the 60-min card. Long press = dragged. Quick release = flew.
 // ============================================================
-function CaptureSqueeze({ onSubmit, onOpenHistory }) {
+function CaptureSqueeze({ onSubmit, onOpenHistory, onOpenProfile }) {
   const [stretch, setStretch] = useCapAlt(0);
   const [pressing, setPressing] = useCapAlt(false);
   const [hasInteracted, setHasInteracted] = useCapAlt(false);
@@ -441,7 +442,7 @@ function CaptureSqueeze({ onSubmit, onOpenHistory }) {
   const wobble = pressing ? (1 + Math.sin(Date.now() / 100) * 0.02) : 1;
 
   return (
-    <CaptureShell {...ro} stretch={stretch} onSubmit={onSubmit} onOpenHistory={onOpenHistory}
+    <CaptureShell {...ro} stretch={stretch} onSubmit={onSubmit} onOpenHistory={onOpenHistory} onOpenProfile={onOpenProfile}
       hint="press & hold · long press = dragged" hasInteracted={hasInteracted}>
       <div style={{
         position: 'absolute', left: '50%', top: '50%',
@@ -512,7 +513,7 @@ function CaptureSqueeze({ onSubmit, onOpenHistory }) {
 // VARIANT D — Draw the Hour
 // Drag a curved line across 60 dots. Arc high = dragged, arc low = flew.
 // ============================================================
-function CaptureDraw({ onSubmit, onOpenHistory }) {
+function CaptureDraw({ onSubmit, onOpenHistory, onOpenProfile }) {
   const [points, setPoints] = useCapAlt([]); // array of {t, y} in 0..1
   const [drawing, setDrawing] = useCapAlt(false);
   const [hasInteracted, setHasInteracted] = useCapAlt(false);
@@ -568,7 +569,7 @@ function CaptureDraw({ onSubmit, onOpenHistory }) {
     : '';
 
   return (
-    <CaptureShell {...ro} stretch={stretch} onSubmit={onSubmit} onOpenHistory={onOpenHistory}
+    <CaptureShell {...ro} stretch={stretch} onSubmit={onSubmit} onOpenHistory={onOpenHistory} onOpenProfile={onOpenProfile}
       hint="draw how the hour felt" hasInteracted={hasInteracted}>
       <div style={{
         position: 'absolute', left: '50%', top: '50%',
@@ -654,7 +655,7 @@ function CaptureDraw({ onSubmit, onOpenHistory }) {
 // VARIANT E — Two Thumbs (pinch-stretch)
 // Two handles you can pinch together or spread apart.
 // ============================================================
-function CapturePinch({ onSubmit, onOpenHistory }) {
+function CapturePinch({ onSubmit, onOpenHistory, onOpenProfile }) {
   const [spread, setSpread] = useCapAlt(0.5); // 0..1, 0.5 = neutral
   const [drag, setDrag] = useCapAlt(null); // 'left' | 'right' | null
   const [hasInteracted, setHasInteracted] = useCapAlt(false);
@@ -732,7 +733,7 @@ function CapturePinch({ onSubmit, onOpenHistory }) {
   const rightX = 0.5 + spread / 2;
 
   return (
-    <CaptureShell {...ro2} stretch={stretch2} onSubmit={onSubmit} onOpenHistory={onOpenHistory}
+    <CaptureShell {...ro2} stretch={stretch2} onSubmit={onSubmit} onOpenHistory={onOpenHistory} onOpenProfile={onOpenProfile}
       hint="pinch in or pull apart" hasInteracted={hasInteracted}>
       <div style={{
         position: 'absolute', left: '50%', top: '50%',

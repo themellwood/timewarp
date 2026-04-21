@@ -24,7 +24,27 @@ function CalendarButton({ onClick }) {
   );
 }
 
-function CaptureScreen({ onSubmit, onOpenHistory, material = 'plasma' }) {
+// Top-right counterpart — opens the anonymous profile / settings surface.
+function ProfileButton({ onClick }) {
+  return (
+    <button onClick={onClick} aria-label="Open profile" style={{
+      position: 'absolute', top: 18, right: 18, zIndex: 6,
+      width: 40, height: 40, borderRadius: '50%',
+      background: 'rgba(255,255,255,0.06)',
+      backdropFilter: 'blur(20px)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      color: '#fff', cursor: 'pointer',
+      display: 'grid', placeItems: 'center',
+    }}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="6" r="3" stroke="#fff" strokeWidth="1.3"/>
+        <path d="M2 14c0-3 2.5-5 6-5s6 2 6 5" stroke="#fff" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+    </button>
+  );
+}
+
+function CaptureScreen({ onSubmit, onOpenHistory, onOpenProfile, material = 'plasma' }) {
   const [stretch, setStretch] = useStateS2(0);
   const [phase, setPhase] = useStateS2('ask'); // ask -> pulling -> submitting -> done
   const [hasDragged, setHasDragged] = useStateS2(false);
@@ -65,6 +85,8 @@ function CaptureScreen({ onSubmit, onOpenHistory, material = 'plasma' }) {
 
       {/* Calendar -> week history */}
       {onOpenHistory && <CalendarButton onClick={onOpenHistory}/>}
+      {/* Profile -> demographics + replay intro */}
+      {onOpenProfile && <ProfileButton onClick={onOpenProfile}/>}
 
       {/* TOP: mirror prompt */}
       <div style={{
@@ -213,4 +235,4 @@ function CaptureScreen({ onSubmit, onOpenHistory, material = 'plasma' }) {
   );
 }
 
-Object.assign(window, { CaptureScreen, CalendarButton });
+Object.assign(window, { CaptureScreen, CalendarButton, ProfileButton });

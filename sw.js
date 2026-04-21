@@ -2,7 +2,7 @@
  * App-shell cache + notification click handling. Kept intentionally small.
  */
 
-const VERSION = 'tw-v6';
+const VERSION = 'tw-v7';
 const SHELL = [
   './',
   'index.html',

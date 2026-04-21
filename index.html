@@ -63,6 +63,7 @@ const SCREENS = [
   { id: 'world',     label: 'World' },
   { id: 'history',   label: 'Week' },
   { id: 'insights',  label: 'Cohort' },
+  { id: 'profile',   label: 'Profile' },
 ];
 
 const CAPTURE_VARIANTS = [
@@ -144,6 +145,7 @@ function App() {
           const common = {
             onSubmit: () => setScreen('world'),
             onOpenHistory: () => setScreen('history'),
+            onOpenProfile: () => setScreen('profile'),
             material: tweaks.material,
           };
           switch (tweaks.capture) {
@@ -155,11 +157,16 @@ function App() {
             default:         return <CaptureScreen {...common}/>;
           }
         })()}
+        {screen === 'profile' && <ProfileScreen
+          onBack={() => setScreen('capture')}
+          onReplayIntro={() => setScreen('onboard')}/>}
         {screen === 'world' && <WorldScreen
           worldStyle={tweaks.worldStyle}
           onBack={() => setScreen('capture')}
           onCompare={() => setScreen('insights')}/>}
-        {screen === 'history' && <HistoryScreen onBack={() => setScreen('capture')}/>}
+        {screen === 'history' && <HistoryScreen
+          onBack={() => setScreen('capture')}
+          onCompare={() => setScreen('insights')}/>}
         {screen === 'insights' && <InsightsScreen onBack={() => setScreen('capture')}/>}
       </div>
 

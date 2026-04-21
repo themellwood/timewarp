@@ -1,159 +1,6 @@
-/* Time Warp — screens: Lock, Onboarding */
+/* Time Warp — screens: Onboarding, Demographics, Profile */
 
 const { useState: useStateS1, useEffect: useEffectS1 } = React;
-
-// -------- shared chrome --------
-function StatusBar({ variant = 'light' }) {
-  const c = variant === 'light' ? '#fff' : '#000';
-  return (
-    <div className="status-bar">
-      <div style={{ color: c }}>9:41</div>
-      <div className="glyphs">
-        <svg width="18" height="12" viewBox="0 0 18 12">
-          <rect x="0" y="7" width="3" height="5" rx="0.5" fill={c}/>
-          <rect x="5" y="5" width="3" height="7" rx="0.5" fill={c}/>
-          <rect x="10" y="2.5" width="3" height="9.5" rx="0.5" fill={c}/>
-          <rect x="15" y="0" width="3" height="12" rx="0.5" fill={c}/>
-        </svg>
-        <svg width="26" height="12" viewBox="0 0 26 12">
-          <rect x="0.5" y="0.5" width="22" height="11" rx="3" stroke={c} strokeOpacity="0.5" fill="none"/>
-          <rect x="2" y="2" width="19" height="8" rx="1.5" fill={c}/>
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-function HomeIndicator() {
-  return <div className="home-indicator"/>;
-}
-
-// -------- Lock screen with notification --------
-function LockScreen({ onTap }) {
-  const [banner, setBanner] = useStateS1(false);
-  useEffectS1(() => {
-    const t = setTimeout(() => setBanner(true), 700);
-    return () => clearTimeout(t);
-  }, []);
-
-  return (
-    <div className="screen" style={{
-      background: `
-        radial-gradient(ellipse at 50% 40%, rgba(123, 44, 255, 0.35) 0%, transparent 50%),
-        radial-gradient(ellipse at 30% 80%, rgba(255, 62, 165, 0.25) 0%, transparent 50%),
-        #000
-      `,
-    }}>
-      <div className="starfield"/>
-
-      {/* lockscreen time */}
-      <div style={{
-        position: 'absolute', top: 90, left: 0, right: 0,
-        textAlign: 'center', color: '#fff',
-      }}>
-        <div style={{ fontFamily: 'var(--mono)', fontSize: 13, letterSpacing: '0.2em', opacity: 0.7 }}>
-          MONDAY · APRIL 20
-        </div>
-        <div style={{
-          fontFamily: 'var(--serif)',
-          fontSize: 112,
-          fontWeight: 300,
-          lineHeight: 1,
-          marginTop: 6,
-          letterSpacing: '-0.04em',
-          fontStyle: 'italic',
-        }}>
-          2:47
-        </div>
-      </div>
-
-      {/* floating orb in background, small */}
-      <div style={{
-        position: 'absolute',
-        left: '50%', top: 330,
-        transform: 'translateX(-50%)',
-        opacity: 0.35,
-        pointerEvents: 'none',
-      }}>
-        <Orb size={140} interactive={false} material="plasma" showGlow={false}/>
-      </div>
-
-      {/* notification */}
-      {banner && (
-        <div
-          onClick={onTap}
-          className="enter"
-          style={{
-            position: 'absolute',
-            left: 12, right: 12, top: 360,
-            padding: 16,
-            borderRadius: 24,
-            background: 'rgba(20, 10, 40, 0.65)',
-            backdropFilter: 'blur(30px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(30px) saturate(180%)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
-            cursor: 'pointer',
-            display: 'flex',
-            gap: 12,
-            alignItems: 'flex-start',
-          }}>
-          {/* app icon */}
-          <div style={{
-            width: 42, height: 42, borderRadius: 10,
-            background: `radial-gradient(circle at 35% 35%, #ff3ea5, #7b2cff 60%, #1a0020)`,
-            boxShadow: '0 4px 12px rgba(255, 62, 165, 0.4), inset 0 1px 0 rgba(255,255,255,0.3)',
-            flexShrink: 0,
-          }}/>
-          <div style={{ flex: 1, color: '#fff' }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between',
-              fontFamily: 'var(--mono)', fontSize: 10,
-              letterSpacing: '0.15em', opacity: 0.6,
-              textTransform: 'uppercase', marginBottom: 4,
-            }}>
-              <span>TIME WARP</span>
-              <span>now</span>
-            </div>
-            <div style={{ fontFamily: 'var(--serif)', fontSize: 18, fontStyle: 'italic', lineHeight: 1.25 }}>
-              How long did the last hour take?
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>
-              Hold the orb. Tell us.
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* bottom glyphs */}
-      <div style={{
-        position: 'absolute', bottom: 60, left: 0, right: 0,
-        display: 'flex', justifyContent: 'space-between', padding: '0 44px',
-      }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: '50%',
-          background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L15 8L21 9L16.5 13.5L18 20L12 17L6 20L7.5 13.5L3 9L9 8L12 2Z" fill="#fff" opacity="0.8"/>
-          </svg>
-        </div>
-        <div style={{
-          width: 44, height: 44, borderRadius: '50%',
-          background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M4 8L12 4L20 8V18C20 19 19 20 18 20H6C5 20 4 19 4 18V8Z" stroke="#fff" strokeWidth="2" opacity="0.8"/>
-            <circle cx="12" cy="13" r="3" stroke="#fff" strokeWidth="2" opacity="0.8"/>
-          </svg>
-        </div>
-      </div>
-
-    </div>
-  );
-}
 
 // -------- Onboarding --------
 const ONBOARD_STEPS = [
@@ -564,4 +411,188 @@ function OnboardIllo3() {
   );
 }
 
-Object.assign(window, { LockScreen, Onboarding, DemographicsStep, StatusBar, HomeIndicator });
+// -------- Profile (edit demographics, replay intro, reset device) --------
+function ProfileScreen({ onBack, onReplayIntro }) {
+  const P = window.TWProfile;
+  const initial = P.getProfile();
+  const [ageBucket, setAge] = useStateS1(initial.ageBucket || '');
+  const [gender, setGender] = useStateS1(initial.gender || '');
+  const [interests, setInterests] = useStateS1(initial.interests || []);
+  const [saved, setSaved] = useStateS1(false);
+
+  const anonId = P.getAnonId();
+  const hemisphere = P.getHemisphere();
+  const tz = P.getTimezone();
+
+  const toggleInterest = (tag) => {
+    setInterests((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
+  };
+
+  // Autosave on change — profile edits should feel immediate, with a brief
+  // "saved" confirmation rather than a modal commit step.
+  useEffectS1(() => {
+    P.setProfile({
+      ageBucket: ageBucket || null,
+      gender: gender || null,
+      interests,
+    });
+    setSaved(true);
+    const t = setTimeout(() => setSaved(false), 900);
+    return () => clearTimeout(t);
+  }, [ageBucket, gender, interests]);
+
+  const resetDevice = () => {
+    if (!confirm('Reset this device? This clears your anonymous ID, demographics, and local history. Your server submissions stay.')) return;
+    try {
+      localStorage.removeItem('tw_anon_id');
+      localStorage.removeItem('tw_profile');
+      localStorage.removeItem('tw_pending');
+      localStorage.removeItem('tw_screen');
+      localStorage.removeItem('tw_tweaks');
+    } catch (e) {}
+    window.location.hash = '';
+    window.location.reload();
+  };
+
+  return (
+    <div className="screen" style={{
+      background: `
+        radial-gradient(ellipse at 70% 0%, rgba(123, 44, 255, 0.18) 0%, transparent 50%),
+        radial-gradient(ellipse at 20% 100%, rgba(255, 62, 165, 0.14) 0%, transparent 50%),
+        #050008
+      `,
+    }}>
+      <div className="starfield" style={{ opacity: 0.3 }}/>
+
+      <div style={{
+        position: 'absolute', top: 52, left: 0, right: 0,
+        padding: '0 24px', display: 'flex',
+        justifyContent: 'space-between', alignItems: 'center', zIndex: 5,
+      }}>
+        <button onClick={onBack} aria-label="Back" style={{
+          width: 38, height: 38, borderRadius: '50%',
+          background: 'rgba(255,255,255,0.06)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          color: '#fff', cursor: 'pointer',
+          display: 'grid', placeItems: 'center',
+        }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M9 2L3 7l6 5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </button>
+        <div className="eyebrow">PROFILE</div>
+        <div style={{
+          width: 38, height: 38, display: 'grid', placeItems: 'center',
+          fontFamily: 'var(--mono)', fontSize: 10, color: saved ? '#4fe9ff' : 'transparent',
+          letterSpacing: '0.12em', transition: 'color 0.3s',
+        }}>SAVED</div>
+      </div>
+
+      <div style={{
+        position: 'absolute', top: 108, left: 24, right: 24, bottom: 24,
+        overflowY: 'auto', paddingBottom: 40,
+      }} className="no-scrollbar">
+
+        <h1 className="serif" style={{
+          fontSize: 34, fontWeight: 400, lineHeight: 1.05,
+          letterSpacing: '-0.02em', color: '#fff', margin: '0 0 8px',
+        }}>
+          An anonymous<br/>shape of you.
+        </h1>
+        <p style={{
+          fontSize: 13, lineHeight: 1.55,
+          color: 'rgba(255,255,255,0.55)', marginBottom: 24,
+        }}>
+          Change anything any time. Nothing here ties back to you — only a random device ID.
+        </p>
+
+        <DemoRow label="AGE">
+          <div className="chip-row">
+            {P.AGE_BUCKETS.map((b) => (
+              <button key={b} className="chip"
+                data-active={ageBucket === b}
+                onClick={() => setAge(ageBucket === b ? '' : b)}>{b}</button>
+            ))}
+          </div>
+        </DemoRow>
+
+        <DemoRow label="GENDER">
+          <div className="chip-row">
+            {P.GENDERS.map((g) => (
+              <button key={g} className="chip"
+                data-active={gender === g}
+                onClick={() => setGender(gender === g ? '' : g)}>{g}</button>
+            ))}
+          </div>
+        </DemoRow>
+
+        <DemoRow label="INTERESTS · RHYTHMS">
+          <div className="chip-row">
+            {P.INTERESTS.map((t) => (
+              <button key={t} className="chip"
+                data-active={interests.includes(t)}
+                onClick={() => toggleInterest(t)}>{t}</button>
+            ))}
+          </div>
+        </DemoRow>
+
+        <div style={{
+          marginTop: 6, padding: '12px 14px', borderRadius: 12,
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          fontFamily: 'var(--mono)', fontSize: 10,
+          color: 'var(--ink-faint)', letterSpacing: '0.1em', lineHeight: 1.7,
+        }}>
+          <div>HEMISPHERE · <span style={{ color: 'var(--ink-dim)' }}>{hemisphere}</span> (auto)</div>
+          <div>TIMEZONE · <span style={{ color: 'var(--ink-dim)' }}>{tz}</span></div>
+          <div>DEVICE ID · <span style={{ color: 'var(--ink-dim)' }}>{anonId.slice(0, 8)}…</span></div>
+        </div>
+
+        <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button onClick={onReplayIntro} style={{
+            padding: '14px 16px', borderRadius: 14,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: '#fff', cursor: 'pointer', textAlign: 'left',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 2 }}>INTRO</div>
+              <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 15 }}>
+                Replay the opening →
+              </div>
+            </div>
+          </button>
+
+          <a href="DATA.md" style={{
+            padding: '14px 16px', borderRadius: 14,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: '#fff', cursor: 'pointer', textDecoration: 'none',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 2 }}>DATA</div>
+              <div style={{ fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 15 }}>
+                What's public →
+              </div>
+            </div>
+          </a>
+
+          <button onClick={resetDevice} style={{
+            padding: '14px 16px', borderRadius: 14,
+            background: 'rgba(255, 62, 100, 0.08)',
+            border: '1px solid rgba(255, 62, 100, 0.22)',
+            color: '#ff6a86', cursor: 'pointer', textAlign: 'left',
+            fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.15em',
+          }}>
+            RESET THIS DEVICE
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { Onboarding, DemographicsStep, ProfileScreen });
