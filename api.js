@@ -6,8 +6,8 @@
 (function () {
   // Swap once the custom domain is live. Both defaults work for local dev
   // via the Wrangler `wrangler dev` proxy (uses workers.dev subdomain).
-  const API_BASE = (window.TW_API_BASE || 'https://api.timewarp.app');
-  const DATA_BASE = (window.TW_DATA_BASE || 'https://data.timewarp.app');
+  const API_BASE = (window.TW_API_BASE || 'https://timewarp-api.perky.workers.dev');
+  const DATA_BASE = (window.TW_DATA_BASE || 'https://pub-9dffd6c49ad244ce8893f12cdc193bdf.r2.dev');
 
   const SAMPLE_REGIONS = [
     { name: 'Tokyo',     lat: 35,  lng: 139, s:  0.38 },

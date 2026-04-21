@@ -15,7 +15,7 @@ crons = ["0 * * * *", "5 0 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "timewarp_db"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "082ee1ea-a1b5-45b0-a393-fe59def0e946"
 
 # R2 bucket serving the public dataset.
 # Create once:  wrangler r2 bucket create timewarp-public
