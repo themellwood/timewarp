@@ -230,6 +230,9 @@ function CaptureDial({ onSubmit, onOpenHistory }) {
   const dialRef = useRCapAlt(null);
   const lastAngle = useRCapAlt(0);
   const accumAngle = useRCapAlt(0);
+  // Last quantized "tick" the dial crossed — used to fire one haptic pulse
+  // per tick crossing, like the detents on an iPod clickwheel.
+  const lastTick = useRCapAlt(0);
   const ro = readout(stretch);
 
   const getAngle = (e) => {
@@ -252,6 +255,20 @@ function CaptureDial({ onSubmit, onOpenHistory }) {
     if (delta < -180) delta += 360;
     accumAngle.current += delta;
     lastAngle.current = a;
+
+    // Haptic click per detent. 12° = 30 ticks per full rotation, which
+    // matches the feel of a classic clickwheel (iPod Mini had ~24). Keep
+    // the pulse short so a fast spin becomes a rapid flurry of clicks
+    // without turning into a continuous buzz.
+    const TICK_DEG = 12;
+    const t = Math.round(accumAngle.current / TICK_DEG);
+    if (t !== lastTick.current) {
+      lastTick.current = t;
+      if (navigator.vibrate) {
+        try { navigator.vibrate(6); } catch (err) {}
+      }
+    }
+
     // 360° = full stretch
     const s = Math.max(-1, Math.min(1, accumAngle.current / 360));
     setStretch(s);

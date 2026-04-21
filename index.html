@@ -38,10 +38,16 @@
 const { useState, useEffect } = React;
 
 const TWEAKS_KEY = 'tw_tweaks';
-const DEFAULT_TWEAKS = { material: 'plasma', sound: false, worldStyle: 'globe', capture: 'orb' };
+// Bump TWEAKS_VERSION whenever the default capture UI (or other default)
+// changes so existing installs don't keep showing the old variant.
+const TWEAKS_VERSION = 2;
+const DEFAULT_TWEAKS = { version: TWEAKS_VERSION, material: 'plasma', sound: false, worldStyle: 'globe', capture: 'dial' };
 function loadTweaks() {
-  try { return Object.assign({}, DEFAULT_TWEAKS, JSON.parse(localStorage.getItem(TWEAKS_KEY)) || {}); }
-  catch (e) { return { ...DEFAULT_TWEAKS }; }
+  try {
+    const stored = JSON.parse(localStorage.getItem(TWEAKS_KEY)) || {};
+    if (stored.version !== TWEAKS_VERSION) return { ...DEFAULT_TWEAKS };
+    return Object.assign({}, DEFAULT_TWEAKS, stored);
+  } catch (e) { return { ...DEFAULT_TWEAKS }; }
 }
 
 const SCREENS = [
