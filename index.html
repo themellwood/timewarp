@@ -142,8 +142,17 @@ function App() {
       <div className="app-root">
         {screen === 'onboard' && <Onboarding onDone={() => setScreen('capture')}/>}
         {screen === 'capture' && (() => {
+          // The five alternative capture UIs just hand us {stretch, minutes,
+          // label} on submit and expect the host to persist + route.
+          // CaptureScreen (the orb) posts internally; passing submitHour
+          // through is a harmless no-op there because it wraps the result.
+          const postAndRoute = async (payload) => {
+            try { if (payload && window.TWApi) await window.TWApi.submitHour(payload); }
+            catch (e) { /* queued in localStorage by submitHour itself */ }
+            setScreen('world');
+          };
           const common = {
-            onSubmit: () => setScreen('world'),
+            onSubmit: postAndRoute,
             onOpenHistory: () => setScreen('history'),
             onOpenProfile: () => setScreen('profile'),
             material: tweaks.material,

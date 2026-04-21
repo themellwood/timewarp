@@ -60,14 +60,11 @@ function CaptureScreen({ onSubmit, onOpenHistory, onOpenProfile, material = 'pla
     }
   }, [stretch, hasDragged]);
 
-  const [queued, setQueued] = useStateS2(false);
+  // The host (index.html) persists the row via TWApi.submitHour and then
+  // routes. We only need to show the submitting ripple before handing off.
   const handleSubmit = async () => {
     setPhase('submitting');
     const payload = { stretch, minutes, label };
-    try {
-      const r = await window.TWApi.submitHour(payload);
-      setQueued(Boolean(r && r.queued));
-    } catch (e) { setQueued(true); }
     // Keep the ripple visible long enough to feel intentional.
     setTimeout(() => onSubmit?.(payload), 800);
   };
@@ -204,7 +201,7 @@ function CaptureScreen({ onSubmit, onOpenHistory, onOpenProfile, material = 'pla
             style={{ width: '100%', maxWidth: 300 }}
             onClick={handleSubmit}
             disabled={phase === 'submitting'}>
-            {phase === 'submitting' ? (queued ? 'Saved — will sync' : 'Logging…') : 'Log this hour'}
+            {phase === 'submitting' ? 'Logging…' : 'Log this hour'}
           </button>
         )}
       </div>
