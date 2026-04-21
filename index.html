@@ -22,6 +22,13 @@
 <div class="stage-bg"></div>
 <div id="root"></div>
 
+<!-- Backend endpoints. api.js falls back to sample data if these are
+     unreachable, so the UI is resilient to the Worker being down. -->
+<script>
+  window.TW_API_BASE  = 'https://timewarp-api.perky.workers.dev';
+  window.TW_DATA_BASE = 'https://pub-9dffd6c49ad244ce8893f12cdc193bdf.r2.dev';
+</script>
+
 <!-- device profile, API client, local notification scheduler: classic scripts, attach helpers to window -->
 <script src="profile.js"></script>
 <script src="api.js"></script>
@@ -56,6 +63,7 @@ const SCREENS = [
   { id: 'world',     label: 'World' },
   { id: 'history',   label: 'Week' },
   { id: 'insights',  label: 'Cohort' },
+  { id: 'profile',   label: 'Profile' },
 ];
 
 const CAPTURE_VARIANTS = [
@@ -137,6 +145,7 @@ function App() {
           const common = {
             onSubmit: () => setScreen('world'),
             onOpenHistory: () => setScreen('history'),
+            onOpenProfile: () => setScreen('profile'),
             material: tweaks.material,
           };
           switch (tweaks.capture) {
@@ -148,11 +157,16 @@ function App() {
             default:         return <CaptureScreen {...common}/>;
           }
         })()}
+        {screen === 'profile' && <ProfileScreen
+          onBack={() => setScreen('capture')}
+          onReplayIntro={() => setScreen('onboard')}/>}
         {screen === 'world' && <WorldScreen
           worldStyle={tweaks.worldStyle}
           onBack={() => setScreen('capture')}
           onCompare={() => setScreen('insights')}/>}
-        {screen === 'history' && <HistoryScreen onBack={() => setScreen('capture')}/>}
+        {screen === 'history' && <HistoryScreen
+          onBack={() => setScreen('capture')}
+          onCompare={() => setScreen('insights')}/>}
         {screen === 'insights' && <InsightsScreen onBack={() => setScreen('capture')}/>}
       </div>
 

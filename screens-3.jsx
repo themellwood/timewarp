@@ -101,49 +101,93 @@ function WorldScreen({ onBack, onCompare, worldStyle = 'globe' }) {
           {worldStyle !== 'particles' && worldStyle !== 'grid' && <Globe regions={regions} rotation={now * 30}/>}
         </div>
 
-        {/* Patterns section */}
+        {/* Patterns section — built from the server aggregate. The hourly
+            cron writes patterns.age / .gender / .interests as {key, avg, n}.
+            We surface the extremes (highest vs lowest avg within the bucket)
+            so copy stays honest to whatever the data actually says today. */}
         <div style={{ padding: '12px 20px 0' }}>
           <div className="eyebrow" style={{ marginBottom: 12, paddingLeft: 8 }}>PATTERNS TODAY</div>
 
           <PatternCard
             kicker="GEOGRAPHY"
-            title={<>Northern hemisphere had a <em style={{color:'#ff9500'}}>{Math.abs(hemDiff)}% {hemDir}</em> day than the south.</>}
-            detail={`${north.length} regions vs ${south.length} regions · p < 0.001`}
+            title={
+              Math.abs(hemDiff) < 3 ? (
+                <>Hemispheres are <em style={{color:'#4fe9ff'}}>running in sync</em> today.</>
+              ) : (
+                <>Northern hemisphere had a <em style={{color:'#ff9500'}}>{Math.abs(hemDiff)}% {hemDir}</em> day than the south.</>
+              )
+            }
+            detail={`${north.length} regions north · ${south.length} south`}
             bar={[nAvg, sAvg]}
             labels={['N', 'S']}
           />
 
-          <PatternCard
-            kicker="AGE"
-            title={<>People <em style={{color:'#ff3ea5'}}>over 50</em> reported a day <em>34% longer</em> than those under 25.</>}
-            detail="consistent across 18 countries"
-            bar={[0.42, -0.18]}
-            labels={['50+', '<25']}
-          />
+          {(() => {
+            const age = (agg && agg.patterns && agg.patterns.age) || [];
+            if (age.length < 2) return null;
+            const sorted = [...age].sort((a, b) => b.avg - a.avg);
+            const hi = sorted[0], lo = sorted[sorted.length - 1];
+            const pct = Math.round((hi.avg - lo.avg) * 20);
+            const dir = pct >= 0 ? 'longer' : 'shorter';
+            return (
+              <PatternCard
+                kicker="AGE"
+                title={<>People <em style={{color:'#ff3ea5'}}>{hi.key}</em> reported a day <em>{Math.abs(pct)}% {dir}</em> than those {lo.key}.</>}
+                detail={`${hi.n + lo.n} submissions · last 24h`}
+                bar={[hi.avg, lo.avg]}
+                labels={[hi.key, lo.key]}
+              />
+            );
+          })()}
 
-          <PatternCard
-            kicker="TIMEZONE"
-            title={<>Night-shift workers felt the day <em style={{color:'#4fe9ff'}}>23% shorter</em>.</>}
-            detail="vs. 9-5 baseline · n = 89K"
-            bar={[-0.4, 0.05]}
-            labels={['NIGHT', 'DAY']}
-          />
+          {(() => {
+            const ints = (agg && agg.patterns && agg.patterns.interests) || [];
+            if (ints.length < 1) return null;
+            const sorted = [...ints].sort((a, b) => Math.abs(a.avg) - Math.abs(b.avg));
+            const steady = sorted[0];
+            const allAvg = ints.reduce((a, r) => a + r.avg, 0) / ints.length;
+            const drift = Math.round(Math.abs(steady.avg - allAvg) * 100);
+            return (
+              <PatternCard
+                kicker="INTEREST"
+                title={<>People into <em style={{color:'#ff3ea5'}}>{steady.key}</em> tracked closest to real time.</>}
+                detail={`n = ${steady.n} · drift ${drift}%`}
+                bar={[steady.avg, allAvg]}
+                labels={[steady.key.toUpperCase(), 'OTHERS']}
+              />
+            );
+          })()}
 
-          <PatternCard
-            kicker="WEATHER"
-            title={<>Rainy-weather cities ran <em style={{color:'#ff9500'}}>9% longer</em>.</>}
-            detail="sunny regions: baseline"
-            bar={[0.18, -0.02]}
-            labels={['RAIN', 'SUN']}
-          />
+          {(() => {
+            const gen = (agg && agg.patterns && agg.patterns.gender) || [];
+            if (gen.length < 2) return null;
+            const sorted = [...gen].sort((a, b) => b.avg - a.avg);
+            const hi = sorted[0], lo = sorted[sorted.length - 1];
+            const pct = Math.round((hi.avg - lo.avg) * 20);
+            if (Math.abs(pct) < 3) return null;
+            const dir = pct >= 0 ? 'longer' : 'shorter';
+            return (
+              <PatternCard
+                kicker="GENDER"
+                title={<>People identifying as <em style={{color:'#4fe9ff'}}>{hi.key}</em> felt the day <em>{Math.abs(pct)}% {dir}</em>.</>}
+                detail={`${hi.n} vs ${lo.n} submissions`}
+                bar={[hi.avg, lo.avg]}
+                labels={[hi.key.toUpperCase(), lo.key.toUpperCase()]}
+              />
+            );
+          })()}
 
-          <PatternCard
-            kicker="INTEREST"
-            title={<>People into <em style={{color:'#ff3ea5'}}>meditation</em> had the most accurate sense of a day.</>}
-            detail="avg drift: ±2.1% from 24h"
-            bar={[0.02, 0.35]}
-            labels={['MEDITATE', 'OTHERS']}
-          />
+          {totalUsers < 10 && (
+            <div style={{
+              padding: '14px 16px', borderRadius: 16,
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px dashed rgba(255,255,255,0.08)',
+              color: 'var(--ink-dim)', fontSize: 13, textAlign: 'center',
+              fontFamily: 'var(--serif)', fontStyle: 'italic',
+            }}>
+              The world is just waking up here — patterns appear once a few more hours are logged.
+            </div>
+          )}
         </div>
 
         {/* Footer CTA */}
@@ -454,16 +498,59 @@ function Globe({ regions, rotation = 0 }) {
 }
 
 // ---------- HISTORY ----------
-function HistoryScreen({ onBack }) {
-  const days = [
-    { day: 'MON', hours: gen(14, 0.3) },
-    { day: 'TUE', hours: gen(13, -0.2) },
-    { day: 'WED', hours: gen(15, 0.5) },
-    { day: 'THU', hours: gen(12, -0.1) },
-    { day: 'FRI', hours: gen(16, -0.6) },
-    { day: 'SAT', hours: gen(11, -0.4) },
-    { day: 'SUN', hours: gen(13, 0.1) },
-  ];
+// Renders the user's actual submissions over the last 7 calendar days.
+// Each submission covers a ~1 hour window; the DB stores stretch in [-1,1]
+// plus a minutes value, so "felt hours" for the week is Σ(minutes)/60 and
+// "actual hours" is the count of submissions (each one = 1 hour of reported
+// experience). The grid shows one cell per submission in local time.
+function HistoryScreen({ onBack, onCompare }) {
+  const [data, setData] = useStateS3(null); // null = loading, [] = empty
+  const [offline, setOffline] = useStateS3(false);
+
+  useEffectS3(() => {
+    let cancelled = false;
+    if (!window.TWApi) { setData([]); return; }
+    window.TWApi.fetchMyHistory({ days: 7 })
+      .then((r) => { if (cancelled) return; setData(r.submissions || []); setOffline(!!r.offline); })
+      .catch(() => { if (!cancelled) setData([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Group submissions by local day-of-week (Mon..Sun) over the last 7 days.
+  const byDay = Array.from({ length: 7 }, () => []);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const weekStart = new Date(today); weekStart.setDate(weekStart.getDate() - 6);
+  if (data && data.length) {
+    for (const s of data) {
+      const d = new Date(s.ts * 1000);
+      const dayStart = new Date(d); dayStart.setHours(0, 0, 0, 0);
+      const idx = Math.floor((dayStart - weekStart) / 86400000);
+      if (idx >= 0 && idx < 7) byDay[idx].push(s);
+    }
+  }
+
+  const totalFeltMin = (data || []).reduce((a, s) => a + (s.minutes || 60), 0);
+  const actualHours = (data || []).length;
+  const feltHours = Math.round(totalFeltMin / 60 * 10) / 10;
+  const drift = actualHours > 0 ? Math.round(((feltHours / actualHours) - 1) * 1000) / 10 : 0;
+  const driftLabel = actualHours === 0
+    ? null
+    : drift >= 0 ? `${Math.abs(drift)}% slow` : `${Math.abs(drift)}% fast`;
+  const driftColor = drift >= 0 ? '#ff9500' : '#4fe9ff';
+
+  // Find the day-of-week that ran longest (positive stretch avg) for copy.
+  const dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const dayLabels = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart); d.setDate(d.getDate() + i);
+    return dayNames[d.getDay()];
+  });
+  let slowestIdx = -1, slowestAvg = -Infinity;
+  byDay.forEach((xs, i) => {
+    if (!xs.length) return;
+    const a = xs.reduce((t, r) => t + (r.stretch || 0), 0) / xs.length;
+    if (a > slowestAvg) { slowestAvg = a; slowestIdx = i; }
+  });
+  const slowestDayCopy = slowestIdx >= 0 && slowestAvg > 0.1 ? `${dayLabels[slowestIdx]}s dragged.` : '';
 
   return (
     <div className="screen" style={{
@@ -473,23 +560,45 @@ function HistoryScreen({ onBack }) {
       <TopBar onBack={onBack} label="YOUR WEEK"/>
 
       <div style={{ position: 'absolute', top: 104, left: 28, right: 28 }}>
-        <div className="serif" style={{
-          fontSize: 40, lineHeight: 1.05, color: '#fff',
-          letterSpacing: '-0.02em',
-        }}>
-          94 hours felt<br/>
-          like <span style={{ color: '#ff3ea5' }}>87</span>.
-        </div>
-        <div style={{ color: 'var(--ink-dim)', fontSize: 13, marginTop: 10 }}>
-          Your week ran <span style={{ color: '#4fe9ff' }}>7.4% fast</span>. Fridays especially.
-        </div>
+        {data === null ? (
+          <div className="serif" style={{ fontSize: 32, color: 'rgba(255,255,255,0.4)' }}>loading…</div>
+        ) : actualHours === 0 ? (
+          <>
+            <div className="serif" style={{
+              fontSize: 36, lineHeight: 1.05, color: '#fff', letterSpacing: '-0.02em',
+            }}>
+              Nothing yet.<br/>
+              <span style={{ color: '#ff3ea5' }}>Log an hour</span> to start your week.
+            </div>
+            <div style={{ color: 'var(--ink-dim)', fontSize: 13, marginTop: 10 }}>
+              Your last seven days will appear here.
+              {offline && ' · offline'}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="serif" style={{
+              fontSize: 40, lineHeight: 1.05, color: '#fff', letterSpacing: '-0.02em',
+            }}>
+              {actualHours} {actualHours === 1 ? 'hour' : 'hours'} felt<br/>
+              like <span style={{ color: '#ff3ea5' }}>{feltHours}</span>.
+            </div>
+            <div style={{ color: 'var(--ink-dim)', fontSize: 13, marginTop: 10 }}>
+              Your week ran <span style={{ color: driftColor }}>{driftLabel}</span>.
+              {slowestDayCopy ? ' ' + slowestDayCopy : ''}
+              {offline && ' · offline'}
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{
         position: 'absolute', top: 270, left: 20, right: 20,
         display: 'flex', flexDirection: 'column', gap: 4,
       }}>
-        {days.map((d, i) => <DayRow key={i} {...d}/>)}
+        {byDay.map((entries, i) => (
+          <DayRow key={i} day={dayLabels[i]} entries={entries}/>
+        ))}
       </div>
 
       <div style={{
@@ -507,7 +616,7 @@ function HistoryScreen({ onBack }) {
       </div>
 
       <div style={{ position: 'absolute', bottom: 58, left: 20, right: 20 }}>
-        <button style={{
+        <button onClick={onCompare} style={{
           width: '100%', padding: '16px 20px', borderRadius: 18,
           background: 'rgba(255,255,255,0.04)',
           border: '1px solid rgba(255,255,255,0.08)',
@@ -531,18 +640,15 @@ function HistoryScreen({ onBack }) {
   );
 }
 
-function gen(seed, bias) {
-  const out = [];
-  for (let i = 0; i < 24; i++) {
-    const t = i / 24;
-    const rhythm = Math.sin(t * Math.PI * 2) * 0.3;
-    const noise = Math.sin(seed * 7 + i * 2.1) * 0.4;
-    out.push(Math.max(-1, Math.min(1, rhythm + noise + bias)));
+function DayRow({ day, entries }) {
+  // 24 hour slots per day; each submission's local hour lights one cell.
+  const cells = Array.from({ length: 24 }, () => null);
+  for (const s of entries) {
+    const h = new Date(s.ts * 1000).getHours();
+    // If multiple entries land in the same hour, keep the one with the
+    // largest magnitude — rare (rate-limited to one per 50 min on the server).
+    if (!cells[h] || Math.abs(s.stretch) > Math.abs(cells[h].stretch)) cells[h] = s;
   }
-  return out;
-}
-
-function DayRow({ day, hours }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <div style={{
@@ -553,18 +659,23 @@ function DayRow({ day, hours }) {
         flex: 1, display: 'grid',
         gridTemplateColumns: 'repeat(24, 1fr)', gap: 2, height: 28,
       }}>
-        {hours.map((s, i) => {
-          const hue = stretchToHue(s);
-          const filled = i < 18;
+        {cells.map((s, i) => {
+          if (!s) {
+            return (
+              <div key={i} style={{
+                height: 28, borderRadius: 2,
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px dashed rgba(255,255,255,0.05)',
+                opacity: 0.5,
+              }}/>
+            );
+          }
+          const hue = stretchToHue(s.stretch);
           return (
-            <div key={i} style={{
+            <div key={i} title={`${new Date(s.ts * 1000).toLocaleTimeString()} · ${s.label}`} style={{
               height: 28, borderRadius: 2,
-              background: filled
-                ? `linear-gradient(to top, oklch(0.35 0.25 ${hue}) 0%, oklch(0.65 0.28 ${hue}) 100%)`
-                : 'rgba(255,255,255,0.03)',
-              border: filled ? 'none' : '1px dashed rgba(255,255,255,0.06)',
-              opacity: filled ? 1 : 0.4,
-              boxShadow: filled ? `0 0 8px oklch(0.55 0.3 ${hue} / 0.5)` : 'none',
+              background: `linear-gradient(to top, oklch(0.35 0.25 ${hue}) 0%, oklch(0.65 0.28 ${hue}) 100%)`,
+              boxShadow: `0 0 8px oklch(0.55 0.3 ${hue} / 0.5)`,
             }}/>
           );
         })}
@@ -574,16 +685,55 @@ function DayRow({ day, hours }) {
 }
 
 // ---------- INSIGHTS ----------
+// Scores each server-supplied cohort against the user's recent stretch.
+// 1. "Distance" match — how close the user's average stretch is to the
+//    cohort's avg (|Δ| on [-1,1] → 1 for identical, 0 for opposite).
+// 2. "Membership" boost — if the cohort's bucket matches the user's own
+//    demographic (e.g. AGE · 25-34 for a 25-34-year-old), add 0.15.
+// The combined match drives the sort order and the % shown per row.
 function InsightsScreen({ onBack }) {
   const SAMPLE = (window.TWApi && window.TWApi.SAMPLE_COHORTS) || [];
-  const [cohorts, setCohorts] = useStateS3(SAMPLE);
+  const [cohorts, setCohorts] = useStateS3(null); // null = loading
+  const [myRecent, setMyRecent] = useStateS3(null);
+
   useEffectS3(() => {
     let cancelled = false;
-    (window.TWApi ? window.TWApi.fetchCohorts() : Promise.resolve(null))
-      .then((v) => { if (!cancelled && v && v.cohorts) setCohorts(v.cohorts); })
-      .catch(() => {});
+    const cohortP = window.TWApi ? window.TWApi.fetchCohorts() : Promise.resolve(null);
+    const meP = window.TWApi ? window.TWApi.fetchMyHistory({ days: 7 }) : Promise.resolve(null);
+    Promise.all([cohortP, meP]).then(([c, m]) => {
+      if (cancelled) return;
+      setCohorts((c && c.cohorts) || SAMPLE);
+      setMyRecent((m && m.submissions) || []);
+    }).catch(() => {
+      if (!cancelled) { setCohorts(SAMPLE); setMyRecent([]); }
+    });
     return () => { cancelled = true; };
   }, []);
+
+  const profile = (window.TWProfile && window.TWProfile.getProfile()) || {};
+  const hemisphere = window.TWProfile ? window.TWProfile.getHemisphere() : 'N';
+
+  // User's average stretch over their recent history — the anchor we score
+  // every cohort against. If there's no history yet, use 0 (neutral) and
+  // mark the screen with a soft "log your first hour" hint.
+  const userAvg = myRecent && myRecent.length
+    ? myRecent.reduce((a, r) => a + (r.stretch || 0), 0) / myRecent.length
+    : null;
+
+  const scored = (cohorts || []).map((c) => {
+    const dist = userAvg == null ? 0.5 : 1 - Math.min(1, Math.abs((c.s || 0) - userAvg) / 2);
+    let member = 0;
+    const lbl = (c.label || '').toUpperCase();
+    if (lbl.startsWith('AGE · ') && profile.ageBucket && lbl.endsWith(profile.ageBucket.toUpperCase())) member = 0.15;
+    else if (lbl.startsWith('GENDER · ') && profile.gender && lbl.endsWith(profile.gender.toUpperCase())) member = 0.15;
+    else if (lbl.startsWith('HEMISPHERE · ') && lbl.endsWith(hemisphere)) member = 0.15;
+    else if (lbl.startsWith('INTEREST · ') && profile.interests && profile.interests.length) {
+      for (const t of profile.interests) {
+        if (lbl.endsWith(t.toUpperCase())) { member = 0.15; break; }
+      }
+    }
+    return { ...c, match: Math.min(1, dist * 0.85 + member) };
+  }).sort((a, b) => b.match - a.match);
 
   return (
     <div className="screen" style={{
@@ -597,16 +747,33 @@ function InsightsScreen({ onBack }) {
           fontSize: 32, lineHeight: 1.1, color: '#fff',
           letterSpacing: '-0.02em',
         }}>
-          Your last hour<br/>
-          <span style={{ color: '#4fe9ff' }}>rhymed with</span>
+          Your recent hours<br/>
+          <span style={{ color: '#4fe9ff' }}>
+            {userAvg == null ? 'are blank.' : 'rhymed with'}
+          </span>
         </div>
+        {userAvg == null && (
+          <div style={{ color: 'var(--ink-dim)', fontSize: 13, marginTop: 8 }}>
+            Log an hour and your cohorts will snap into rank.
+          </div>
+        )}
       </div>
 
       <div style={{
         position: 'absolute', top: 220, left: 20, right: 20, bottom: 60,
         overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8,
       }} className="no-scrollbar">
-        {cohorts.sort((a, b) => b.match - a.match).map((c, i) => <CohortRow key={i} {...c}/>)}
+        {cohorts === null ? (
+          <div style={{ color: 'var(--ink-faint)', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.15em' }}>
+            LOADING…
+          </div>
+        ) : scored.length === 0 ? (
+          <div style={{ color: 'var(--ink-faint)', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.15em' }}>
+            NO COHORTS YET — BE AMONG THE FIRST.
+          </div>
+        ) : (
+          scored.map((c, i) => <CohortRow key={i} {...c}/>)
+        )}
       </div>
     </div>
   );

@@ -128,8 +128,32 @@
     });
   }
 
+  // Per-user history — hits the Worker directly (not the R2 CDN) since the
+  // row set is private to this anon_id. No cache: the user expects to see
+  // their latest log the moment they open the week screen.
+  async function fetchMyHistory({ days = 30 } = {}) {
+    const P = window.TWProfile;
+    if (!P) return { submissions: [] };
+    const anonId = P.getAnonId();
+    try {
+      const r = await fetch(
+        `${API_BASE}/me?anon_id=${encodeURIComponent(anonId)}&days=${days}`,
+        { mode: 'cors', cache: 'no-store' },
+      );
+      if (!r.ok) throw new Error(r.status);
+      return await r.json();
+    } catch (e) {
+      // Offline fallback — merge in any queued-but-not-yet-posted rows so
+      // the user sees what they just logged even without a network.
+      const pending = loadQueue().map((b) => ({
+        ts: b.ts, stretch: b.stretch, minutes: b.minutes, label: b.label,
+      }));
+      return { submissions: pending, offline: true };
+    }
+  }
+
   window.TWApi = {
-    submitHour, flushQueue, fetchWorldAggregate, fetchCohorts,
+    submitHour, flushQueue, fetchWorldAggregate, fetchCohorts, fetchMyHistory,
     SAMPLE_REGIONS, SAMPLE_COHORTS,
   };
 })();
