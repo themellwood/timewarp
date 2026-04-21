@@ -18,9 +18,16 @@ function CaptureScreen({ onSubmit, material = 'plasma' }) {
     }
   }, [stretch, hasDragged]);
 
-  const handleSubmit = () => {
+  const [queued, setQueued] = useStateS2(false);
+  const handleSubmit = async () => {
     setPhase('submitting');
-    setTimeout(() => onSubmit?.({ stretch, minutes, label }), 1200);
+    const payload = { stretch, minutes, label };
+    try {
+      const r = await window.TWApi.submitHour(payload);
+      setQueued(Boolean(r && r.queued));
+    } catch (e) { setQueued(true); }
+    // Keep the ripple visible long enough to feel intentional.
+    setTimeout(() => onSubmit?.(payload), 800);
   };
 
   return (
@@ -154,7 +161,7 @@ function CaptureScreen({ onSubmit, material = 'plasma' }) {
             style={{ width: '100%', maxWidth: 300 }}
             onClick={handleSubmit}
             disabled={phase === 'submitting'}>
-            {phase === 'submitting' ? 'Logging…' : 'Log this hour'}
+            {phase === 'submitting' ? (queued ? 'Saved — will sync' : 'Logging…') : 'Log this hour'}
           </button>
         )}
       </div>

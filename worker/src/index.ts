@@ -1,0 +1,328 @@
+/* Time Warp — Cloudflare Worker.
+ * POST /submit  → append one row
+ * GET  /world/latest.json → serve the cached aggregate from R2
+ * GET  /health  → 200 ok
+ * Cron (hourly): recompute the aggregate.
+ * Cron (daily):  dump yesterday's UTC rows to R2 as CSV.
+ */
+
+export interface Env {
+  DB: D1Database;
+  PUBLIC: R2Bucket;
+  FRONTEND_ORIGIN?: string;
+}
+
+const CORS: HeadersInit = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Max-Age': '86400',
+};
+
+function json(body: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(body), {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...CORS, ...(init.headers || {}) },
+  });
+}
+
+function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)); }
+
+function stretchToLabelServer(s: number): string {
+  if (s <= -0.85) return 'Vanished';
+  if (s <= -0.55) return 'Flew by';
+  if (s <= -0.2)  return 'Quick';
+  if (s <  0.2)   return 'As it was';
+  if (s <  0.55)  return 'Lingered';
+  if (s <  0.85)  return 'Dragged';
+  return 'Endless';
+}
+
+function validate(body: any): { ok: true; value: Submission } | { ok: false; error: string } {
+  if (!body || typeof body !== 'object') return { ok: false, error: 'bad body' };
+  const { anon_id, stretch, minutes, label, tz, hemisphere, age_bucket, gender, interests } = body;
+  if (typeof anon_id !== 'string' || anon_id.length < 8 || anon_id.length > 64) return { ok: false, error: 'anon_id' };
+  if (typeof stretch !== 'number' || !Number.isFinite(stretch)) return { ok: false, error: 'stretch' };
+  if (typeof minutes !== 'number' || minutes < 0 || minutes > 600) return { ok: false, error: 'minutes' };
+  if (typeof label !== 'string' || label.length > 32) return { ok: false, error: 'label' };
+  if (typeof tz !== 'string' || tz.length > 64) return { ok: false, error: 'tz' };
+  if (hemisphere !== 'N' && hemisphere !== 'S') return { ok: false, error: 'hemisphere' };
+  const age = age_bucket == null ? null : String(age_bucket).slice(0, 16);
+  const gen = gender == null ? null : String(gender).slice(0, 32);
+  const tags: string[] = Array.isArray(interests)
+    ? interests.filter((x) => typeof x === 'string').slice(0, 20).map((x) => x.slice(0, 32))
+    : [];
+  return {
+    ok: true,
+    value: {
+      anon_id,
+      stretch: clamp(stretch, -1, 1),
+      minutes: Math.round(minutes),
+      label: stretchToLabelServer(clamp(stretch, -1, 1)) || label,
+      tz,
+      hemisphere,
+      age_bucket: age,
+      gender: gen,
+      interests: tags,
+    },
+  };
+}
+
+interface Submission {
+  anon_id: string;
+  stretch: number;
+  minutes: number;
+  label: string;
+  tz: string;
+  hemisphere: 'N' | 'S';
+  age_bucket: string | null;
+  gender: string | null;
+  interests: string[];
+}
+
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    const url = new URL(req.url);
+
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    if (url.pathname === '/health') return json({ ok: true });
+
+    if (url.pathname === '/submit' && req.method === 'POST') {
+      let body: any;
+      try { body = await req.json(); }
+      catch { return json({ error: 'invalid json' }, { status: 400 }); }
+
+      const v = validate(body);
+      if (!v.ok) return json({ error: v.error }, { status: 400 });
+
+      const now = Math.floor(Date.now() / 1000);
+      // Per-device rate limit: one submission per 50 minutes.
+      const recent = await env.DB
+        .prepare('SELECT ts FROM submissions WHERE anon_id = ? ORDER BY ts DESC LIMIT 1')
+        .bind(v.value.anon_id).first<{ ts: number }>();
+      if (recent && now - recent.ts < 50 * 60) {
+        return json({ error: 'too soon' }, { status: 429 });
+      }
+
+      await env.DB.prepare(
+        `INSERT INTO submissions
+          (anon_id, ts, stretch, minutes, label, tz, hemisphere, age_bucket, gender, interests)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        v.value.anon_id, now, v.value.stretch, v.value.minutes, v.value.label,
+        v.value.tz, v.value.hemisphere, v.value.age_bucket, v.value.gender,
+        JSON.stringify(v.value.interests)
+      ).run();
+
+      return new Response(null, { status: 204, headers: CORS });
+    }
+
+    if (url.pathname === '/world/latest.json' && req.method === 'GET') {
+      const obj = await env.PUBLIC.get('world/latest.json');
+      if (!obj) return json({ feltHours: null, regions: [], totalUsers: 0 });
+      return new Response(obj.body, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=300',
+          ...CORS,
+        },
+      });
+    }
+
+    if (url.pathname === '/cohorts/latest.json' && req.method === 'GET') {
+      const obj = await env.PUBLIC.get('cohorts/latest.json');
+      if (!obj) return json({ cohorts: [] });
+      return new Response(obj.body, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=300',
+          ...CORS,
+        },
+      });
+    }
+
+    return json({ error: 'not found' }, { status: 404 });
+  },
+
+  async scheduled(event: ScheduledController, env: Env): Promise<void> {
+    const minute = new Date(event.scheduledTime).getUTCMinutes();
+    if (event.cron === '5 0 * * *') await dumpDaily(env);
+    else if (minute === 0) await aggregate(env);
+  },
+};
+
+// ---- aggregate: write world/latest.json + cohorts/latest.json ----
+async function aggregate(env: Env) {
+  const since = Math.floor(Date.now() / 1000) - 24 * 3600;
+
+  const rows = await env.DB.prepare(
+    `SELECT stretch, hemisphere, age_bucket, gender, interests, tz
+     FROM submissions WHERE ts >= ?`
+  ).bind(since).all<any>();
+
+  const list = rows.results || [];
+  const total = list.length;
+
+  const avgS = total ? list.reduce((a: number, r: any) => a + (r.stretch || 0), 0) / total : 0;
+  const feltHours = Math.round((24 + avgS * 20) * 10) / 10;
+
+  const N = list.filter((r: any) => r.hemisphere === 'N');
+  const S = list.filter((r: any) => r.hemisphere === 'S');
+  const nAvg = N.length ? N.reduce((a: number, r: any) => a + r.stretch, 0) / N.length : 0;
+  const sAvg = S.length ? S.reduce((a: number, r: any) => a + r.stretch, 0) / S.length : 0;
+  const hemispherePct = Math.round((nAvg - sAvg) * 20);
+
+  // Group by coarse region — take the first path segment of the IANA tz
+  // and map to a representative lat/lng. Keeps the globe/particles/grid
+  // visualizations consistent with the prototype.
+  const regionMap: Record<string, { lat: number; lng: number; name: string }> = {
+    'America/New_York':    { lat: 40, lng: -74, name: 'NYC' },
+    'America/Los_Angeles': { lat: 34, lng: -118, name: 'LA' },
+    'America/Sao_Paulo':   { lat: -23, lng: -46, name: 'São Paulo' },
+    'America/Buenos_Aires':{ lat: -34, lng: -58, name: 'Buenos Aires' },
+    'America/Argentina/Buenos_Aires': { lat: -34, lng: -58, name: 'Buenos Aires' },
+    'Europe/London':       { lat: 51, lng: 0,   name: 'London' },
+    'Europe/Berlin':       { lat: 52, lng: 13,  name: 'Berlin' },
+    'Europe/Moscow':       { lat: 55, lng: 37,  name: 'Moscow' },
+    'Africa/Lagos':        { lat: 6,  lng: 3,   name: 'Lagos' },
+    'Africa/Cairo':        { lat: 30, lng: 31,  name: 'Cairo' },
+    'Africa/Johannesburg': { lat: -26, lng: 28, name: 'Johannesburg' },
+    'Asia/Tokyo':          { lat: 35, lng: 139, name: 'Tokyo' },
+    'Asia/Kolkata':        { lat: 19, lng: 72,  name: 'Mumbai' },
+    'Asia/Jakarta':        { lat: -6, lng: 106, name: 'Jakarta' },
+    'Australia/Sydney':    { lat: -33, lng: 151, name: 'Sydney' },
+    'Atlantic/Reykjavik':  { lat: 64, lng: -22, name: 'Reykjavík' },
+  };
+  const byRegion = new Map<string, { sum: number; n: number }>();
+  for (const r of list) {
+    const key = r.tz || 'UTC';
+    if (!byRegion.has(key)) byRegion.set(key, { sum: 0, n: 0 });
+    const b = byRegion.get(key)!;
+    b.sum += r.stretch; b.n += 1;
+  }
+  const regions = [...byRegion.entries()]
+    .filter(([k]) => regionMap[k])
+    .map(([k, v]) => ({ ...regionMap[k], s: clamp(v.sum / v.n, -1, 1) }));
+
+  const aggregate = {
+    generatedAt: Date.now(),
+    windowHours: 24,
+    totalUsers: total,
+    feltHours,
+    hemisphere: { northAvg: nAvg, southAvg: sAvg, diffPct: hemispherePct },
+    regions: regions.length ? regions : [],
+    patterns: {
+      age: bucketAvg(list, 'age_bucket'),
+      gender: bucketAvg(list, 'gender'),
+      interests: interestAvg(list),
+    },
+  };
+
+  await env.PUBLIC.put('world/latest.json', JSON.stringify(aggregate, null, 2), {
+    httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=300' },
+  });
+
+  // Cohort rows for the Insights screen. Rank by how close each cohort's
+  // stretch is to the caller-agnostic average — the screen renders the
+  // caller's % match client-side against their own last submission.
+  const cohorts = [
+    ...bucketRows(list, 'age_bucket', 'AGE'),
+    ...bucketRows(list, 'gender', 'GENDER'),
+    ...bucketRows(list, 'hemisphere', 'HEMISPHERE'),
+    ...interestRows(list),
+  ];
+  await env.PUBLIC.put('cohorts/latest.json', JSON.stringify({ generatedAt: Date.now(), cohorts }, null, 2), {
+    httpMetadata: { contentType: 'application/json', cacheControl: 'public, max-age=300' },
+  });
+}
+
+function bucketAvg(list: any[], field: 'age_bucket' | 'gender') {
+  const m = new Map<string, { sum: number; n: number }>();
+  for (const r of list) {
+    const k = r[field];
+    if (!k) continue;
+    if (!m.has(k)) m.set(k, { sum: 0, n: 0 });
+    const v = m.get(k)!;
+    v.sum += r.stretch; v.n += 1;
+  }
+  return [...m.entries()].map(([k, v]) => ({ key: k, avg: v.sum / v.n, n: v.n }));
+}
+
+function bucketRows(list: any[], field: 'age_bucket' | 'gender' | 'hemisphere', prefix: string) {
+  return bucketAvg(list, field as any).map((b) => ({
+    label: `${prefix} · ${b.key.toUpperCase()}`,
+    s: clamp(b.avg, -1, 1),
+    n: formatN(b.n),
+    match: 0.5, // client overrides with a real affinity score
+  }));
+}
+
+function interestAvg(list: any[]) {
+  const m = new Map<string, { sum: number; n: number }>();
+  for (const r of list) {
+    let tags: string[] = [];
+    try { tags = JSON.parse(r.interests || '[]'); } catch { tags = []; }
+    for (const t of tags) {
+      if (!m.has(t)) m.set(t, { sum: 0, n: 0 });
+      const v = m.get(t)!;
+      v.sum += r.stretch; v.n += 1;
+    }
+  }
+  return [...m.entries()].map(([k, v]) => ({ key: k, avg: v.sum / v.n, n: v.n }));
+}
+
+function interestRows(list: any[]) {
+  return interestAvg(list).map((b) => ({
+    label: `INTEREST · ${b.key.toUpperCase()}`,
+    s: clamp(b.avg, -1, 1),
+    n: formatN(b.n),
+    match: 0.5,
+  }));
+}
+
+function formatN(n: number) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1_000) return Math.round(n / 1_000) + 'K';
+  return String(n);
+}
+
+// ---- daily CSV dump ----
+async function dumpDaily(env: Env) {
+  // Previous UTC day.
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  const end = Math.floor(d.getTime() / 1000);
+  const start = end - 24 * 3600;
+  const dateKey = new Date(start * 1000).toISOString().slice(0, 10);
+
+  const rows = await env.DB.prepare(
+    `SELECT id, anon_id, ts, stretch, minutes, label, tz, hemisphere,
+            age_bucket, gender, interests
+     FROM submissions WHERE ts >= ? AND ts < ? ORDER BY ts`
+  ).bind(start, end).all<any>();
+
+  const header = 'id,anon_id,ts,stretch,minutes,label,tz,hemisphere,age_bucket,gender,interests\n';
+  const body = (rows.results || []).map((r: any) => [
+    r.id, r.anon_id, r.ts, r.stretch, r.minutes,
+    csvSafe(r.label), csvSafe(r.tz), r.hemisphere,
+    csvSafe(r.age_bucket), csvSafe(r.gender), csvSafe(r.interests),
+  ].join(',')).join('\n');
+
+  await env.PUBLIC.put(`export/${dateKey}.csv`, header + body, {
+    httpMetadata: { contentType: 'text/csv; charset=utf-8' },
+  });
+
+  // Index: list of available daily dumps.
+  const listResp = await env.PUBLIC.list({ prefix: 'export/' });
+  const files = (listResp.objects || []).map((o) => o.key).sort();
+  await env.PUBLIC.put('export/index.json', JSON.stringify({ generatedAt: Date.now(), files }, null, 2), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+}
+
+function csvSafe(v: unknown) {
+  if (v == null) return '';
+  const s = String(v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}

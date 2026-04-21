@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#1a0033"/>
+      <stop offset="60%" stop-color="#0a0014"/>
+      <stop offset="100%" stop-color="#050008"/>
+    </radialGradient>
+    <radialGradient id="orb" cx="38%" cy="30%" r="72%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="10%" stop-color="#ffbce0"/>
+      <stop offset="45%" stop-color="#ff3ea5"/>
+      <stop offset="80%" stop-color="#7b2cff"/>
+      <stop offset="100%" stop-color="#1a0020"/>
+    </radialGradient>
+    <radialGradient id="gloss" cx="30%" cy="25%" r="30%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff3ea5" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#7b2cff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#7b2cff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="220" fill="url(#halo)" filter="url(#blur)"/>
+  <circle cx="256" cy="256" r="160" fill="url(#orb)"/>
+  <ellipse cx="210" cy="205" rx="62" ry="46" fill="url(#gloss)"/>
+</svg>

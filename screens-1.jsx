@@ -181,6 +181,13 @@ const ONBOARD_STEPS = [
 
 function Onboarding({ onDone }) {
   const [step, setStep] = useStateS1(0);
+  const totalSteps = ONBOARD_STEPS.length + 1; // +1 for demographics
+  const isDemographics = step === ONBOARD_STEPS.length;
+
+  if (isDemographics) {
+    return <DemographicsStep stepIndex={step} totalSteps={totalSteps} onDone={onDone}/>;
+  }
+
   const d = ONBOARD_STEPS[step];
 
   return (
@@ -241,7 +248,7 @@ function Onboarding({ onDone }) {
         position: 'absolute', bottom: 150, left: 32,
         display: 'flex', gap: 6,
       }}>
-        {ONBOARD_STEPS.map((_, i) => (
+        {Array.from({ length: totalSteps }).map((_, i) => (
           <div key={i} style={{
             width: i === step ? 28 : 6,
             height: 6, borderRadius: 100,
@@ -257,29 +264,174 @@ function Onboarding({ onDone }) {
         <button
           className="btn-primary"
           style={{ width: '100%' }}
-          onClick={() => {
-            if (step < ONBOARD_STEPS.length - 1) setStep(step + 1);
-            else onDone?.();
-          }}>
+          onClick={() => setStep(step + 1)}>
           {d.cta}
         </button>
-        {step < ONBOARD_STEPS.length - 1 && (
-          <button
-            className="btn-ghost"
-            onClick={onDone}
-            style={{
-              background: 'transparent', border: 0, color: 'var(--ink-faint)',
-              marginTop: 14, width: '100%', padding: 12,
-              fontFamily: 'var(--mono)', fontSize: 11,
-              letterSpacing: '0.15em', textTransform: 'uppercase',
-              cursor: 'pointer',
-            }}>
-            skip intro
-          </button>
-        )}
+        <button
+          className="btn-ghost"
+          onClick={onDone}
+          style={{
+            background: 'transparent', border: 0, color: 'var(--ink-faint)',
+            marginTop: 14, width: '100%', padding: 12,
+            fontFamily: 'var(--mono)', fontSize: 11,
+            letterSpacing: '0.15em', textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}>
+          skip intro
+        </button>
       </div>
 
       <HomeIndicator/>
+    </div>
+  );
+}
+
+// -------- Demographics (final onboarding step) --------
+// Captured once, sent with every submission. Hemisphere is auto-derived from
+// the browser timezone; everything else is optional. This is the only place
+// we surface the public-dataset note.
+function DemographicsStep({ stepIndex, totalSteps, onDone }) {
+  const P = window.TWProfile;
+  const initial = P.getProfile();
+  const [ageBucket, setAge] = useStateS1(initial.ageBucket || '');
+  const [gender, setGender] = useStateS1(initial.gender || '');
+  const [interests, setInterests] = useStateS1(initial.interests || []);
+
+  const toggleInterest = (tag) => {
+    setInterests((prev) => prev.includes(tag)
+      ? prev.filter((t) => t !== tag)
+      : [...prev, tag]);
+  };
+
+  const save = () => {
+    P.setProfile({
+      ageBucket: ageBucket || null,
+      gender: gender || null,
+      interests,
+      hemisphere: P.getHemisphere(),
+      tz: P.getTimezone(),
+      onboardedAt: Date.now(),
+    });
+    if (window.TWNotifications) {
+      window.TWNotifications.requestAndSchedule().catch(() => {});
+    }
+    onDone?.();
+  };
+
+  return (
+    <div className="screen" style={{
+      background: `
+        radial-gradient(ellipse at 70% 10%, rgba(255, 62, 165, 0.18) 0%, transparent 50%),
+        radial-gradient(ellipse at 20% 90%, rgba(123, 44, 255, 0.18) 0%, transparent 50%),
+        #050008
+      `,
+    }}>
+      <div className="starfield" style={{ opacity: 0.5 }}/>
+      <StatusBar/>
+
+      <div style={{ position: 'absolute', top: 70, left: 32, right: 32 }}>
+        <div className="eyebrow" style={{ marginBottom: 16 }}>
+          INDEX: 0{stepIndex + 1} / 0{totalSteps}
+        </div>
+        <h1 className="serif" style={{
+          fontSize: 40, fontWeight: 400, lineHeight: 1.05,
+          letterSpacing: '-0.02em', color: '#fff', marginBottom: 10,
+        }}>
+          A few rough shapes<br/>about you.
+        </h1>
+        <p style={{
+          fontSize: 13, lineHeight: 1.55,
+          color: 'rgba(255,255,255,0.6)',
+        }}>
+          Optional. Pooled anonymously so patterns can surface — hemisphere, age, rhythm.
+          Never tied to an identity. <a href="DATA.md" style={{ color: '#ff3ea5', textDecoration: 'none' }}>See what's public →</a>
+        </p>
+      </div>
+
+      <div style={{
+        position: 'absolute', top: 230, left: 24, right: 24, bottom: 160,
+        overflowY: 'auto',
+      }} className="no-scrollbar">
+        <DemoRow label="AGE">
+          <div className="chip-row">
+            {P.AGE_BUCKETS.map((b) => (
+              <button key={b} className="chip"
+                data-active={ageBucket === b}
+                onClick={() => setAge(ageBucket === b ? '' : b)}>{b}</button>
+            ))}
+          </div>
+        </DemoRow>
+
+        <DemoRow label="GENDER">
+          <div className="chip-row">
+            {P.GENDERS.map((g) => (
+              <button key={g} className="chip"
+                data-active={gender === g}
+                onClick={() => setGender(gender === g ? '' : g)}>{g}</button>
+            ))}
+          </div>
+        </DemoRow>
+
+        <DemoRow label="INTERESTS · RHYTHMS">
+          <div className="chip-row">
+            {P.INTERESTS.map((t) => (
+              <button key={t} className="chip"
+                data-active={interests.includes(t)}
+                onClick={() => toggleInterest(t)}>{t}</button>
+            ))}
+          </div>
+        </DemoRow>
+
+        <div style={{
+          marginTop: 8, fontFamily: 'var(--mono)', fontSize: 10,
+          letterSpacing: '0.12em', color: 'var(--ink-faint)',
+        }}>
+          HEMISPHERE · {P.getHemisphere()} (auto from timezone)
+        </div>
+      </div>
+
+      <div style={{
+        position: 'absolute', bottom: 150, left: 32,
+        display: 'flex', gap: 6,
+      }}>
+        {Array.from({ length: totalSteps }).map((_, i) => (
+          <div key={i} style={{
+            width: i === stepIndex ? 28 : 6,
+            height: 6, borderRadius: 100,
+            background: i === stepIndex ? '#ff3ea5' : 'rgba(255,255,255,0.15)',
+            boxShadow: i === stepIndex ? '0 0 10px #ff3ea5' : 'none',
+            transition: 'all 0.4s',
+          }}/>
+        ))}
+      </div>
+
+      <div style={{ position: 'absolute', bottom: 56, left: 32, right: 32 }}>
+        <button className="btn-primary" style={{ width: '100%' }} onClick={save}>
+          Begin
+        </button>
+        <button
+          onClick={save}
+          style={{
+            background: 'transparent', border: 0, color: 'var(--ink-faint)',
+            marginTop: 14, width: '100%', padding: 12,
+            fontFamily: 'var(--mono)', fontSize: 11,
+            letterSpacing: '0.15em', textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}>
+          skip — no demographics
+        </button>
+      </div>
+
+      <HomeIndicator/>
+    </div>
+  );
+}
+
+function DemoRow({ label, children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div className="eyebrow" style={{ marginBottom: 10 }}>{label}</div>
+      {children}
     </div>
   );
 }
@@ -418,4 +570,4 @@ function OnboardIllo3() {
   );
 }
 
-Object.assign(window, { LockScreen, Onboarding, StatusBar, HomeIndicator });
+Object.assign(window, { LockScreen, Onboarding, DemographicsStep, StatusBar, HomeIndicator });

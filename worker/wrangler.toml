@@ -1,0 +1,31 @@
+name = "timewarp-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cron triggers:
+#   hourly — refresh the world aggregate JSON
+#   0:05 UTC — dump the previous day's submissions as CSV to R2
+[triggers]
+crons = ["0 * * * *", "5 0 * * *"]
+
+# D1 database for submissions.
+# Create once:  wrangler d1 create timewarp_db
+# then paste the returned database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "timewarp_db"
+database_id = "REPLACE_WITH_D1_ID"
+
+# R2 bucket serving the public dataset.
+# Create once:  wrangler r2 bucket create timewarp-public
+# Then attach a custom domain (data.<your-domain>) in the dashboard, or use
+# the `r2.dev` subdomain for testing.
+[[r2_buckets]]
+binding = "PUBLIC"
+bucket_name = "timewarp-public"
+
+[vars]
+# The GitHub Pages (or custom) frontend origin. Used only for logging —
+# CORS on the API is open ("*") because the data is public anyway.
+FRONTEND_ORIGIN = "https://themellwood.github.io"

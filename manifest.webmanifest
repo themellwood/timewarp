@@ -1,0 +1,16 @@
+{
+  "name": "Time Warp",
+  "short_name": "Time Warp",
+  "description": "Capture how the last hour felt. See how time flowed for the world.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#050008",
+  "background_color": "#050008",
+  "categories": ["lifestyle", "social", "utilities"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

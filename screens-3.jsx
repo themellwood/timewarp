@@ -2,6 +2,13 @@
 
 const { useState: useStateS3, useEffect: useEffectS3 } = React;
 
+function formatCount(n) {
+  if (!isFinite(n)) return '—';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
+  return String(n);
+}
+
 // ---------- WORLD: day-level aggregate ----------
 function WorldScreen({ onBack, worldStyle = 'globe' }) {
   const [now, setNow] = useStateS3(0);
@@ -12,36 +19,42 @@ function WorldScreen({ onBack, worldStyle = 'globe' }) {
     return () => cancelAnimationFrame(r);
   }, []);
 
-  // Day-level data: each region reports avg stretch across their day.
-  const regions = [
-    { name: 'Tokyo',     lat: 35,  lng: 139, s:  0.38 },
-    { name: 'Lagos',     lat: 6,   lng: 3,   s: -0.12 },
-    { name: 'São Paulo', lat: -23, lng: -46, s:  0.05 },
-    { name: 'Berlin',    lat: 52,  lng: 13,  s: -0.30 },
-    { name: 'Mumbai',    lat: 19,  lng: 72,  s:  0.22 },
-    { name: 'NYC',       lat: 40,  lng: -74, s: -0.20 },
-    { name: 'LA',        lat: 34,  lng: -118,s: -0.45 },
-    { name: 'Sydney',    lat: -33, lng: 151, s:  0.10 },
-    { name: 'Cairo',     lat: 30,  lng: 31,  s:  0.28 },
-    { name: 'Moscow',    lat: 55,  lng: 37,  s:  0.48 },
-    { name: 'Reykjavík', lat: 64,  lng: -22, s: -0.08 },
-    { name: 'Jakarta',   lat: -6,  lng: 106, s:  0.02 },
-    { name: 'Buenos Aires', lat: -34, lng: -58, s: -0.05 },
-  ];
+  // Live aggregate — fetched from the public R2 snapshot. Until the first
+  // response (or when offline), we render the bundled sample so the screen
+  // is never blank.
+  const [agg, setAgg] = useStateS3(null);
+  useEffectS3(() => {
+    let cancelled = false;
+    (window.TWApi ? window.TWApi.fetchWorldAggregate() : Promise.resolve(null))
+      .then((v) => { if (!cancelled && v) setAgg(v); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
-  // Aggregate the "24h felt like X hours"
-  const avgS = regions.reduce((a, r) => a + r.s, 0) / regions.length;
-  // dayStretchToHours: -1 => 8h (flew), 0 => 24h, +1 => 48h (dragged)
-  const feltHours = Math.round((24 + avgS * 20) * 10) / 10;
+  const SAMPLE_REGIONS = (window.TWApi && window.TWApi.SAMPLE_REGIONS) || [];
+  const regions = (agg && agg.regions) || SAMPLE_REGIONS;
+
+  // Aggregate the "24h felt like X hours" — prefer the server-computed
+  // feltHours when present, otherwise re-derive from the regions we have.
+  const avgS = regions.length
+    ? regions.reduce((a, r) => a + r.s, 0) / regions.length
+    : 0;
+  const feltHours = (agg && typeof agg.feltHours === 'number')
+    ? agg.feltHours
+    : Math.round((24 + avgS * 20) * 10) / 10;
   const diffPct = Math.round(((feltHours / 24) - 1) * 100);
   const diffLabel = diffPct >= 0 ? `${diffPct}% longer` : `${-diffPct}% shorter`;
+  const totalUsers = (agg && agg.totalUsers) || 2100000;
 
-  // Hemisphere split
+  // Hemisphere split (derived client-side as a fallback when the aggregate
+  // doesn't include precomputed hemisphere stats).
   const north = regions.filter(r => r.lat >= 0);
   const south = regions.filter(r => r.lat < 0);
-  const nAvg = north.reduce((a, r) => a + r.s, 0) / north.length;
-  const sAvg = south.reduce((a, r) => a + r.s, 0) / south.length;
-  const hemDiff = Math.round((nAvg - sAvg) * 20); // in percent-ish
+  const nAvg = north.length ? north.reduce((a, r) => a + r.s, 0) / north.length : 0;
+  const sAvg = south.length ? south.reduce((a, r) => a + r.s, 0) / south.length : 0;
+  const hemDiff = (agg && agg.hemisphere && typeof agg.hemisphere.diffPct === 'number')
+    ? agg.hemisphere.diffPct
+    : Math.round((nAvg - sAvg) * 20);
   const hemDir = hemDiff > 0 ? 'longer' : 'shorter';
 
   return (
@@ -74,7 +87,7 @@ function WorldScreen({ onBack, worldStyle = 'globe' }) {
             fontFamily: 'var(--sans)', fontSize: 13,
             color: 'var(--ink-dim)', marginTop: 6,
           }}>
-            2.1M people · a day that was <span style={{ color: '#fff', fontStyle: 'italic', fontFamily: 'var(--serif)', fontSize: 15 }}>{diffLabel}</span> than 24
+            {formatCount(totalUsers)} people · a day that was <span style={{ color: '#fff', fontStyle: 'italic', fontFamily: 'var(--serif)', fontSize: 15 }}>{diffLabel}</span> than 24
           </div>
         </div>
 
@@ -566,14 +579,15 @@ function DayRow({ day, hours }) {
 
 // ---------- INSIGHTS ----------
 function InsightsScreen({ onBack }) {
-  const cohorts = [
-    { label: 'MEN · 25-34', match: 0.92, s: -0.45, n: '184K' },
-    { label: 'WOMEN · 25-34', match: 0.71, s: -0.15, n: '201K' },
-    { label: 'N. HEMISPHERE', match: 0.84, s: -0.35, n: '1.2M' },
-    { label: 'S. HEMISPHERE', match: 0.41, s:  0.28, n: '410K' },
-    { label: 'CREATIVES', match: 0.88, s: -0.40, n: '67K' },
-    { label: 'NIGHT-OWLS', match: 0.96, s: -0.52, n: '89K' },
-  ];
+  const SAMPLE = (window.TWApi && window.TWApi.SAMPLE_COHORTS) || [];
+  const [cohorts, setCohorts] = useStateS3(SAMPLE);
+  useEffectS3(() => {
+    let cancelled = false;
+    (window.TWApi ? window.TWApi.fetchCohorts() : Promise.resolve(null))
+      .then((v) => { if (!cancelled && v && v.cohorts) setCohorts(v.cohorts); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="screen" style={{

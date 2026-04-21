@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>Time Warp</title>
+<meta name="description" content="Capture how the last hour felt. See how time flowed for the world."/>
+<meta name="theme-color" content="#050008"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Time Warp"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg"/>
+<link rel="apple-touch-icon" href="icons/icon.svg"/>
 <link rel="stylesheet" href="styles.css"/>
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
@@ -13,6 +22,12 @@
 <div class="stage-bg"></div>
 <div id="root"></div>
 
+<!-- device profile, API client, local notification scheduler: classic scripts, attach helpers to window -->
+<script src="profile.js"></script>
+<script src="api.js"></script>
+<script src="notifications.js"></script>
+
+<!-- UI -->
 <script type="text/babel" src="orb.jsx"></script>
 <script type="text/babel" src="screens-1.jsx"></script>
 <script type="text/babel" src="screens-2.jsx"></script>
@@ -22,12 +37,12 @@
 <script type="text/babel">
 const { useState, useEffect } = React;
 
-const TWEAKS = /*EDITMODE-BEGIN*/{
-  "material": "plasma",
-  "sound": false,
-  "worldStyle": "globe",
-  "capture": "orb"
-}/*EDITMODE-END*/;
+const TWEAKS_KEY = 'tw_tweaks';
+const DEFAULT_TWEAKS = { material: 'plasma', sound: false, worldStyle: 'globe', capture: 'orb' };
+function loadTweaks() {
+  try { return Object.assign({}, DEFAULT_TWEAKS, JSON.parse(localStorage.getItem(TWEAKS_KEY)) || {}); }
+  catch (e) { return { ...DEFAULT_TWEAKS }; }
+}
 
 const SCREENS = [
   { id: 'lock',      label: 'Lock' },
@@ -47,33 +62,49 @@ const CAPTURE_VARIANTS = [
   { id: 'pinch',    label: 'Pinch · two thumbs' },
 ];
 
+function pickInitialScreen() {
+  // Respect ?start=capture (from notification deep-links) then prior session
+  // then: first-timers start in the intro; returning users land on the lock.
+  const hash = (window.location.hash || '').replace(/^#/, '');
+  if (hash && SCREENS.some((s) => s.id === hash)) return hash;
+  const stored = localStorage.getItem('tw_screen');
+  if (stored && SCREENS.some((s) => s.id === stored)) return stored;
+  return window.TWProfile && window.TWProfile.hasOnboarded() ? 'lock' : 'onboard';
+}
+
 function App() {
-  const [screen, setScreen] = useState(() => {
-    return localStorage.getItem('tw_screen') || 'lock';
-  });
-  const [tweaks, setTweaks] = useState(TWEAKS);
-  const [editMode, setEditMode] = useState(false);
+  const [screen, setScreen] = useState(pickInitialScreen);
+  const [tweaks, setTweaks] = useState(loadTweaks);
+  const [editMode, setEditMode] = useState(() => window.location.hash === '#tweaks');
 
-  useEffect(() => {
-    localStorage.setItem('tw_screen', screen);
-  }, [screen]);
+  useEffect(() => { localStorage.setItem('tw_screen', screen); }, [screen]);
+  useEffect(() => { localStorage.setItem(TWEAKS_KEY, JSON.stringify(tweaks)); }, [tweaks]);
 
-  // Tweaks host protocol
+  // Hash-based tweaks toggle — visit /#tweaks to surface the config panel.
+  // Lets the user change orb material / world style / ambient hum without
+  // a separate settings screen. Safe to ignore.
   useEffect(() => {
-    const onMsg = (e) => {
-      if (e.data?.type === '__activate_edit_mode') setEditMode(true);
-      if (e.data?.type === '__deactivate_edit_mode') setEditMode(false);
-    };
-    window.addEventListener('message', onMsg);
-    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
-    return () => window.removeEventListener('message', onMsg);
+    const h = () => setEditMode(window.location.hash === '#tweaks');
+    window.addEventListener('hashchange', h);
+    return () => window.removeEventListener('hashchange', h);
   }, []);
 
-  const update = (k, v) => {
-    const next = { ...tweaks, [k]: v };
-    setTweaks(next);
-    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [k]: v } }, '*');
-  };
+  // Service worker posts `tw:route` when the user taps the daily notification.
+  useEffect(() => {
+    const fromSW = (e) => {
+      if (e.data && e.data.type === 'tw:route') setScreen(e.data.route || 'capture');
+    };
+    navigator.serviceWorker?.addEventListener('message', fromSW);
+    // Foreground fallback nudge from notifications.js also routes to capture.
+    const fromForeground = () => setScreen('capture');
+    window.addEventListener('tw:daily-ping', fromForeground);
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', fromSW);
+      window.removeEventListener('tw:daily-ping', fromForeground);
+    };
+  }, []);
+
+  const update = (k, v) => setTweaks((prev) => ({ ...prev, [k]: v }));
 
   // Sound: ambient hum via WebAudio
   useEffect(() => {
@@ -96,7 +127,7 @@ function App() {
     <>
       <OrbDefs/>
       <div className="phone-shell grain">
-        {screen === 'lock' && <LockScreen onTap={() => setScreen('capture')}/>}
+        {screen === 'lock' && <LockScreen onTap={() => setScreen(window.TWProfile?.hasOnboarded() ? 'capture' : 'onboard')}/>}
         {screen === 'onboard' && <Onboarding onDone={() => setScreen('capture')}/>}
         {screen === 'capture' && (() => {
           const common = { onSubmit: () => setScreen('world'), material: tweaks.material };
@@ -171,7 +202,7 @@ function App() {
             fontFamily: 'var(--mono)', fontSize: 9,
             color: 'var(--ink-faint)', letterSpacing: '0.1em',
           }}>
-            USE DOTS ▸ TO NAVIGATE SCREENS
+            CLOSE ▸ REMOVE #tweaks FROM URL
           </div>
         </div>
       )}
@@ -180,6 +211,16 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+
+<!-- Service worker registration — only in browsers that support it and
+     only when served over http(s). No-op during a `file://` open. -->
+<script>
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#1a0033"/>
+      <stop offset="60%" stop-color="#0a0014"/>
+      <stop offset="100%" stop-color="#050008"/>
+    </radialGradient>
+    <radialGradient id="orb" cx="38%" cy="30%" r="72%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="10%" stop-color="#ffbce0"/>
+      <stop offset="45%" stop-color="#ff3ea5"/>
+      <stop offset="80%" stop-color="#7b2cff"/>
+      <stop offset="100%" stop-color="#1a0020"/>
+    </radialGradient>
+    <radialGradient id="gloss" cx="30%" cy="25%" r="30%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff3ea5" stop-opacity="0.4"/>
+      <stop offset="60%" stop-color="#7b2cff" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#7b2cff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Full-bleed background for maskable safe zone -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Orb sits inside the 80% safe zone (256 ± 102) -->
+  <circle cx="256" cy="256" r="200" fill="url(#halo)"/>
+  <circle cx="256" cy="256" r="102" fill="url(#orb)"/>
+  <ellipse cx="227" cy="228" rx="40" ry="30" fill="url(#gloss)"/>
+</svg>
