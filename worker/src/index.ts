@@ -87,6 +87,12 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (url.pathname === '/health') return json({ ok: true });
 
+    // Temporary: manually trigger aggregate (remove after first use)
+    if (url.pathname === '/admin/aggregate' && req.method === 'POST') {
+      await aggregate(env);
+      return json({ ok: true, ran: 'aggregate' });
+    }
+
     if (url.pathname === '/submit' && req.method === 'POST') {
       let body: any;
       try { body = await req.json(); }
