@@ -150,6 +150,44 @@
   });
   window.addEventListener('load', checkForegroundPing);
 
+  // Fire a notification right now — smoke-test from the settings panel.
+  // Returns a structured result so the UI can surface what happened.
+  async function testPing() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      return { ok: false, reason: 'unsupported' };
+    }
+    if (Notification.permission === 'denied') return { ok: false, reason: 'denied' };
+    if (Notification.permission !== 'granted') {
+      const p = await Notification.requestPermission();
+      if (p !== 'granted') return { ok: false, reason: 'denied' };
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification('Time Warp · test', {
+        tag: 'tw-test',
+        body: 'Notifications are working. This is how the daily ping looks.',
+        icon: 'icons/icon.svg',
+        badge: 'icons/icon.svg',
+        data: { route: 'capture' },
+        // No showTrigger — fire immediately.
+      });
+      return { ok: true, method: 'sw' };
+    } catch (e) {
+      // Some browsers (desktop Safari, old Chromium) refuse SW-scoped
+      // notifications and only accept the page-scoped constructor.
+      try {
+        new Notification('Time Warp · test', {
+          body: 'Notifications are working (page scope).',
+          icon: 'icons/icon.svg',
+          tag: 'tw-test',
+        });
+        return { ok: true, method: 'page' };
+      } catch (err) {
+        return { ok: false, reason: 'error', error: String(err && err.message || err) };
+      }
+    }
+  }
+
   // Expose `computeSchedule` so the settings UI can preview the next ping.
-  window.TWNotifications = { requestAndSchedule, computeSchedule };
+  window.TWNotifications = { requestAndSchedule, computeSchedule, testPing };
 })();

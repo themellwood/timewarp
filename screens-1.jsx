@@ -286,6 +286,34 @@ function NotifyRow({ mode, setMode, wakeStart, setWakeStart, wakeEnd, setWakeEnd
     return `${h - 12} pm`;
   };
   const muted = mode === 'off';
+
+  // Test-ping state — fires an immediate notification so the user can
+  // confirm permissions + delivery before waiting for a real schedule.
+  const [pingState, setPingState] = useStateS1('idle'); // idle | sending | sent | blocked | unsupported | error
+  const [pingErr, setPingErr] = useStateS1('');
+  const runTestPing = async () => {
+    if (!window.TWNotifications) { setPingState('unsupported'); return; }
+    setPingState('sending'); setPingErr('');
+    try {
+      const r = await window.TWNotifications.testPing();
+      if (r.ok) setPingState('sent');
+      else if (r.reason === 'denied') setPingState('blocked');
+      else if (r.reason === 'unsupported') setPingState('unsupported');
+      else { setPingState('error'); setPingErr(r.error || ''); }
+    } catch (e) { setPingState('error'); setPingErr(String(e && e.message || e)); }
+    setTimeout(() => setPingState('idle'), 4000);
+  };
+  const pingLabel = {
+    idle: 'Send test ping',
+    sending: 'Sending…',
+    sent: '✓ Ping sent — check your system tray',
+    blocked: 'Blocked — enable notifications in browser settings',
+    unsupported: 'Not supported on this browser',
+    error: 'Couldn\'t send' + (pingErr ? ` · ${pingErr}` : ''),
+  }[pingState];
+  const pingColor = pingState === 'sent' ? '#4fe9ff'
+    : (pingState === 'blocked' || pingState === 'error' || pingState === 'unsupported') ? '#ff6a86'
+    : '#fff';
   return (
     <div style={{
       marginTop: 24, padding: '16px 16px 14px',
@@ -346,6 +374,22 @@ function NotifyRow({ mode, setMode, wakeStart, setWakeStart, wakeEnd, setWakeEnd
         {mode === 'daily' && `One gentle ping at a random time between ${fmt(wakeStart)} and ${fmt(wakeEnd)}.`}
         {mode === 'hourly' && `A ping at the top of every hour from ${fmt(wakeStart)} until ${fmt(wakeEnd)}. That's ${wakeEnd - wakeStart} a day.`}
       </div>
+
+      <button
+        onClick={runTestPing}
+        disabled={pingState === 'sending'}
+        style={{
+          marginTop: 12, width: '100%',
+          padding: '11px 14px', borderRadius: 12,
+          background: 'rgba(79, 233, 255, 0.08)',
+          border: '1px solid rgba(79, 233, 255, 0.28)',
+          color: pingColor, cursor: pingState === 'sending' ? 'wait' : 'pointer',
+          fontFamily: 'var(--mono)', fontSize: 11,
+          letterSpacing: '0.15em', textAlign: 'center',
+          transition: 'color 0.2s',
+        }}>
+        {pingLabel.toUpperCase()}
+      </button>
     </div>
   );
 }
