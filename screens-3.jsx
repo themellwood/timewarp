@@ -21,15 +21,20 @@ function WorldScreen({ onBack, onCompare, worldStyle = 'globe' }) {
 
   // Live aggregate — fetched from the public R2 snapshot. Until the first
   // response (or when offline), we render the bundled sample so the screen
-  // is never blank.
-  const [agg, setAgg] = useStateS3(null);
+  // is never blank. The demo toggle swaps this out for a rich synthetic
+  // aggregate (see TWApi.getDemoAggregate) so visitors can see what the
+  // experience is like once thousands of people are logging.
+  const [live, setLive] = useStateS3(null);
+  const [demo, setDemo] = useStateS3(() => localStorage.getItem('tw_demo') === '1');
   useEffectS3(() => {
     let cancelled = false;
     (window.TWApi ? window.TWApi.fetchWorldAggregate() : Promise.resolve(null))
-      .then((v) => { if (!cancelled && v) setAgg(v); })
+      .then((v) => { if (!cancelled && v) setLive(v); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+  useEffectS3(() => { localStorage.setItem('tw_demo', demo ? '1' : '0'); }, [demo]);
+  const agg = demo && window.TWApi ? window.TWApi.getDemoAggregate() : live;
 
   const SAMPLE_REGIONS = (window.TWApi && window.TWApi.SAMPLE_REGIONS) || [];
   const regions = (agg && agg.regions) || SAMPLE_REGIONS;
@@ -69,7 +74,8 @@ function WorldScreen({ onBack, onCompare, worldStyle = 'globe' }) {
     }}>
       <div className="starfield" style={{ opacity: 0.9 }}/>
 
-      <TopBar onBack={onBack} label={`${new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric' }).toUpperCase()} · WORLDWIDE`}/>
+      <TopBar onBack={onBack} label={`${new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric' }).toUpperCase()} · WORLDWIDE`}
+        right={<DemoToggle on={demo} onChange={setDemo}/>}/>
 
       <div style={{
         position: 'absolute',
@@ -238,7 +244,7 @@ function WorldScreen({ onBack, onCompare, worldStyle = 'globe' }) {
   );
 }
 
-function TopBar({ onBack, label }) {
+function TopBar({ onBack, label, right }) {
   return (
     <div style={{
       position: 'absolute', top: 52, left: 0, right: 0,
@@ -258,8 +264,38 @@ function TopBar({ onBack, label }) {
         </svg>
       </button>
       <div className="eyebrow">{label}</div>
-      <div style={{ width: 38 }}/>
+      <div style={{ minWidth: 38, display: 'flex', justifyContent: 'flex-end' }}>
+        {right || null}
+      </div>
     </div>
+  );
+}
+
+// Demo toggle used on the World screen — swaps the real (small-sample)
+// aggregate for a synthetic preview of what the data looks like at scale.
+function DemoToggle({ on, onChange }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      aria-label={on ? 'Disable demo data' : 'Enable demo data'}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '7px 12px', borderRadius: 999,
+        background: on ? 'rgba(255, 62, 165, 0.18)' : 'rgba(255,255,255,0.05)',
+        backdropFilter: 'blur(20px)',
+        border: `1px solid ${on ? 'rgba(255, 62, 165, 0.45)' : 'rgba(255,255,255,0.1)'}`,
+        color: on ? '#ff9dd1' : 'rgba(255,255,255,0.7)',
+        cursor: 'pointer',
+        fontFamily: 'var(--mono)', fontSize: 10,
+        letterSpacing: '0.15em',
+      }}>
+      <span style={{
+        width: 7, height: 7, borderRadius: '50%',
+        background: on ? '#ff3ea5' : 'rgba(255,255,255,0.35)',
+        boxShadow: on ? '0 0 8px #ff3ea5' : 'none',
+      }}/>
+      DEMO
+    </button>
   );
 }
 

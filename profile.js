@@ -78,9 +78,35 @@
     'athlete','student','caregiver','remote-work','commuter',
   ];
 
+  // Notification prefs. 'daily' picks one random minute inside the wake
+  // window; 'hourly' pings at the top of every wake-window hour; 'off'
+  // schedules nothing.
+  const NOTIFY_DEFAULTS = { mode: 'daily', wakeStart: 9, wakeEnd: 21 };
+  function getNotifyPrefs() {
+    const p = getProfile();
+    return {
+      mode: p.notifyMode || NOTIFY_DEFAULTS.mode,
+      wakeStart: typeof p.wakeStart === 'number' ? p.wakeStart : NOTIFY_DEFAULTS.wakeStart,
+      wakeEnd: typeof p.wakeEnd === 'number' ? p.wakeEnd : NOTIFY_DEFAULTS.wakeEnd,
+    };
+  }
+  function setNotifyPrefs(patch) {
+    // Keep wake window sane (start < end, within 0..23).
+    const next = Object.assign({}, getNotifyPrefs(), patch);
+    next.wakeStart = Math.max(0, Math.min(23, next.wakeStart));
+    next.wakeEnd = Math.max(next.wakeStart + 1, Math.min(24, next.wakeEnd));
+    setProfile({
+      notifyMode: next.mode,
+      wakeStart: next.wakeStart,
+      wakeEnd: next.wakeEnd,
+    });
+    return next;
+  }
+
   window.TWProfile = {
     getAnonId, getProfile, setProfile, hasOnboarded,
     getHemisphere, getTimezone,
+    getNotifyPrefs, setNotifyPrefs,
     AGE_BUCKETS, GENDERS, INTERESTS,
   };
 })();

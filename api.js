@@ -159,6 +159,120 @@
     });
   }
 
+  // Synthetic aggregate — used by the World-screen "demo data" toggle so
+  // visitors can see what the app feels like once thousands of hours have
+  // been logged, without waiting for the real cohort to grow. All values
+  // are deterministic (seeded) so the demo looks the same every render.
+  function getDemoAggregate() {
+    const seed = (n) => { const x = Math.sin(n * 9301 + 49297) * 233280; return x - Math.floor(x); };
+
+    // ~40 regions spread around the globe. Stretch values are shaped to
+    // suggest a mild global "dragged" day with interesting regional swings.
+    const cities = [
+      { name: 'Tokyo',       lat: 35,  lng: 139 },
+      { name: 'Osaka',       lat: 34,  lng: 135 },
+      { name: 'Seoul',       lat: 37,  lng: 126 },
+      { name: 'Beijing',     lat: 39,  lng: 116 },
+      { name: 'Shanghai',    lat: 31,  lng: 121 },
+      { name: 'Hong Kong',   lat: 22,  lng: 114 },
+      { name: 'Bangkok',     lat: 13,  lng: 100 },
+      { name: 'Singapore',   lat: 1,   lng: 103 },
+      { name: 'Jakarta',     lat: -6,  lng: 106 },
+      { name: 'Manila',      lat: 14,  lng: 120 },
+      { name: 'Mumbai',      lat: 19,  lng: 72  },
+      { name: 'Delhi',       lat: 28,  lng: 77  },
+      { name: 'Karachi',     lat: 24,  lng: 67  },
+      { name: 'Dubai',       lat: 25,  lng: 55  },
+      { name: 'Istanbul',    lat: 41,  lng: 28  },
+      { name: 'Cairo',       lat: 30,  lng: 31  },
+      { name: 'Lagos',       lat: 6,   lng: 3   },
+      { name: 'Nairobi',     lat: -1,  lng: 36  },
+      { name: 'Joburg',      lat: -26, lng: 28  },
+      { name: 'Cape Town',   lat: -33, lng: 18  },
+      { name: 'Moscow',      lat: 55,  lng: 37  },
+      { name: 'Berlin',      lat: 52,  lng: 13  },
+      { name: 'Paris',       lat: 48,  lng: 2   },
+      { name: 'London',      lat: 51,  lng: 0   },
+      { name: 'Madrid',      lat: 40,  lng: -3  },
+      { name: 'Rome',        lat: 41,  lng: 12  },
+      { name: 'Stockholm',   lat: 59,  lng: 18  },
+      { name: 'Reykjavík',   lat: 64,  lng: -22 },
+      { name: 'NYC',         lat: 40,  lng: -74 },
+      { name: 'Toronto',     lat: 43,  lng: -79 },
+      { name: 'Chicago',     lat: 41,  lng: -87 },
+      { name: 'LA',          lat: 34,  lng: -118},
+      { name: 'Vancouver',   lat: 49,  lng: -123},
+      { name: 'Mexico City', lat: 19,  lng: -99 },
+      { name: 'Bogotá',      lat: 4,   lng: -74 },
+      { name: 'Lima',        lat: -12, lng: -77 },
+      { name: 'São Paulo',   lat: -23, lng: -46 },
+      { name: 'B. Aires',    lat: -34, lng: -58 },
+      { name: 'Sydney',      lat: -33, lng: 151 },
+      { name: 'Melbourne',   lat: -37, lng: 145 },
+      { name: 'Auckland',    lat: -36, lng: 174 },
+    ];
+    const regions = cities.map((c, i) => {
+      // Base wave by longitude + small random jitter. North tends slightly
+      // more "dragged", south a touch "flew" — a plausible Monday-afternoon
+      // world.
+      const wave = Math.sin((c.lng + 60) / 180 * Math.PI) * 0.35;
+      const hemiBias = c.lat >= 0 ? 0.08 : -0.05;
+      const jitter = (seed(i + 1) - 0.5) * 0.5;
+      const s = Math.max(-0.9, Math.min(0.9, wave + hemiBias + jitter));
+      return { name: c.name, lat: c.lat, lng: c.lng, s: Math.round(s * 100) / 100 };
+    });
+
+    // Hemisphere split — computed from the regions so the PatternCard math
+    // lines up with the visible globe.
+    const north = regions.filter(r => r.lat >= 0);
+    const south = regions.filter(r => r.lat < 0);
+    const nAvg = north.reduce((a, r) => a + r.s, 0) / north.length;
+    const sAvg = south.reduce((a, r) => a + r.s, 0) / south.length;
+    const hemiDiffPct = Math.round((nAvg - sAvg) * 20);
+
+    // Age / gender / interest cohort aggregates. avg in -1..1, n is count.
+    const patterns = {
+      age: [
+        { key: '<18',   avg: -0.42, n: 12400 },
+        { key: '18-24', avg: -0.28, n: 184000 },
+        { key: '25-34', avg: -0.05, n: 612000 },
+        { key: '35-49', avg:  0.18, n: 498000 },
+        { key: '50-64', avg:  0.32, n: 271000 },
+        { key: '65+',   avg:  0.48, n: 94000 },
+      ],
+      gender: [
+        { key: 'woman',       avg:  0.06, n: 980000 },
+        { key: 'man',         avg: -0.11, n: 812000 },
+        { key: 'non-binary',  avg: -0.02, n: 58000 },
+      ],
+      interests: [
+        { key: 'meditation', avg:  0.03, n: 92000 },
+        { key: 'creative',   avg: -0.18, n: 140000 },
+        { key: 'night-owl',  avg: -0.34, n: 87000 },
+        { key: 'parent',     avg:  0.22, n: 210000 },
+        { key: 'athlete',    avg: -0.12, n: 76000 },
+        { key: 'student',    avg: -0.20, n: 154000 },
+        { key: 'remote-work',avg:  0.14, n: 180000 },
+        { key: 'commuter',   avg:  0.27, n: 168000 },
+        { key: 'shift-work', avg:  0.38, n: 42000 },
+        { key: 'caregiver',  avg:  0.25, n: 61000 },
+      ],
+    };
+
+    const avgS = regions.reduce((a, r) => a + r.s, 0) / regions.length;
+    const feltHours = Math.round((24 + avgS * 20) * 10) / 10;
+
+    return {
+      demo: true,
+      feltHours,
+      totalUsers: 2_348_712,
+      regions,
+      hemisphere: { n: nAvg, s: sAvg, diffPct: hemiDiffPct },
+      patterns,
+      generatedAt: Date.now(),
+    };
+  }
+
   // Per-user history — hits the Worker directly (not the R2 CDN) since the
   // row set is private to this anon_id. No cache: the user expects to see
   // their latest log the moment they open the week screen.
@@ -185,7 +299,7 @@
 
   window.TWApi = {
     submitHour, flushQueue, fetchWorldAggregate, fetchCohorts, fetchMyHistory,
-    getLastSubmit, loggedThisHour,
+    getLastSubmit, loggedThisHour, getDemoAggregate,
     SAMPLE_REGIONS, SAMPLE_COHORTS,
   };
 })();

@@ -277,6 +277,79 @@ function DemoRow({ label, children }) {
   );
 }
 
+// -------- Notification settings block (used inside ProfileScreen) --------
+function NotifyRow({ mode, setMode, wakeStart, setWakeStart, wakeEnd, setWakeEnd }) {
+  const fmt = (h) => {
+    if (h === 0) return '12 am';
+    if (h === 12) return '12 pm';
+    if (h < 12) return `${h} am`;
+    return `${h - 12} pm`;
+  };
+  const muted = mode === 'off';
+  return (
+    <div style={{
+      marginTop: 24, padding: '16px 16px 14px',
+      borderRadius: 14,
+      background: 'rgba(255,255,255,0.03)',
+      border: '1px solid rgba(255,255,255,0.06)',
+    }}>
+      <div className="eyebrow" style={{ marginBottom: 10 }}>NOTIFICATIONS</div>
+      <div className="chip-row" style={{ marginBottom: 12 }}>
+        {[
+          { id: 'daily',  label: 'once a day · random' },
+          { id: 'hourly', label: 'every wake hour' },
+          { id: 'off',    label: 'off' },
+        ].map((m) => (
+          <button key={m.id} className="chip"
+            data-active={mode === m.id}
+            onClick={() => setMode(m.id)}>{m.label}</button>
+        ))}
+      </div>
+
+      <div style={{
+        opacity: muted ? 0.35 : 1,
+        pointerEvents: muted ? 'none' : 'auto',
+        transition: 'opacity 0.2s',
+      }}>
+        <div style={{
+          fontFamily: 'var(--mono)', fontSize: 10,
+          color: 'var(--ink-faint)', letterSpacing: '0.12em',
+          marginBottom: 6,
+        }}>
+          WAKE WINDOW · <span style={{ color: 'var(--ink-dim)' }}>{fmt(wakeStart)} → {fmt(wakeEnd)}</span>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.15em', color: 'var(--ink-faint)', marginBottom: 4 }}>START</div>
+          <input
+            type="range" min={0} max={22} step={1} value={wakeStart}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setWakeStart(v);
+              if (wakeEnd <= v) setWakeEnd(Math.min(24, v + 1));
+            }}
+            style={{ width: '100%', accentColor: '#ff3ea5' }}/>
+        </div>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.15em', color: 'var(--ink-faint)', marginBottom: 4 }}>END</div>
+          <input
+            type="range" min={wakeStart + 1} max={24} step={1} value={wakeEnd}
+            onChange={(e) => setWakeEnd(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#ff3ea5' }}/>
+        </div>
+      </div>
+
+      <div style={{
+        marginTop: 12, fontFamily: 'var(--serif)', fontStyle: 'italic',
+        fontSize: 13, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5,
+      }}>
+        {mode === 'off' && 'No reminders — log whenever you remember.'}
+        {mode === 'daily' && `One gentle ping at a random time between ${fmt(wakeStart)} and ${fmt(wakeEnd)}.`}
+        {mode === 'hourly' && `A ping at the top of every hour from ${fmt(wakeStart)} until ${fmt(wakeEnd)}. That's ${wakeEnd - wakeStart} a day.`}
+      </div>
+    </div>
+  );
+}
+
 function OnboardIllo1() {
   // Wavy timeline
   return (
@@ -415,9 +488,13 @@ function OnboardIllo3() {
 function ProfileScreen({ onBack, onReplayIntro }) {
   const P = window.TWProfile;
   const initial = P.getProfile();
+  const initialNotify = P.getNotifyPrefs();
   const [ageBucket, setAge] = useStateS1(initial.ageBucket || '');
   const [gender, setGender] = useStateS1(initial.gender || '');
   const [interests, setInterests] = useStateS1(initial.interests || []);
+  const [notifyMode, setNotifyMode] = useStateS1(initialNotify.mode);
+  const [wakeStart, setWakeStart] = useStateS1(initialNotify.wakeStart);
+  const [wakeEnd, setWakeEnd] = useStateS1(initialNotify.wakeEnd);
   const [saved, setSaved] = useStateS1(false);
 
   const anonId = P.getAnonId();
@@ -441,6 +518,15 @@ function ProfileScreen({ onBack, onReplayIntro }) {
     return () => clearTimeout(t);
   }, [ageBucket, gender, interests]);
 
+  // Notification preferences autosave too, and reschedule the triggers
+  // so changes take effect without a settings-save button.
+  useEffectS1(() => {
+    P.setNotifyPrefs({ mode: notifyMode, wakeStart, wakeEnd });
+    if (window.TWNotifications) {
+      window.TWNotifications.requestAndSchedule().catch(() => {});
+    }
+  }, [notifyMode, wakeStart, wakeEnd]);
+
   const resetDevice = () => {
     if (!confirm('Reset this device? This clears your anonymous ID, demographics, and local history. Your server submissions stay.')) return;
     try {
@@ -449,6 +535,9 @@ function ProfileScreen({ onBack, onReplayIntro }) {
       localStorage.removeItem('tw_pending');
       localStorage.removeItem('tw_screen');
       localStorage.removeItem('tw_tweaks');
+      localStorage.removeItem('tw_last_submit');
+      localStorage.removeItem('tw_demo');
+      localStorage.removeItem('tw_next_ping');
     } catch (e) {}
     window.location.hash = '';
     window.location.reload();
@@ -548,6 +637,11 @@ function ProfileScreen({ onBack, onReplayIntro }) {
           <div>TIMEZONE · <span style={{ color: 'var(--ink-dim)' }}>{tz}</span></div>
           <div>DEVICE ID · <span style={{ color: 'var(--ink-dim)' }}>{anonId.slice(0, 8)}…</span></div>
         </div>
+
+        <NotifyRow
+          mode={notifyMode} setMode={setNotifyMode}
+          wakeStart={wakeStart} setWakeStart={setWakeStart}
+          wakeEnd={wakeEnd} setWakeEnd={setWakeEnd}/>
 
         <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button onClick={onReplayIntro} style={{
