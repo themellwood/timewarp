@@ -78,6 +78,7 @@
     };
     try {
       await postOnce(body);
+      saveLastSubmit(body);
       // Opportunistic drain — if any earlier submissions failed offline.
       flushQueue().catch(() => {});
       return { ok: true, queued: false };
@@ -85,8 +86,38 @@
       const q = loadQueue();
       q.push(body);
       saveQueue(q);
+      // Treat queued submissions as the user's logged hour too — they've
+      // answered, we just haven't gotten it to the server yet.
+      saveLastSubmit(body);
       return { ok: true, queued: true };
     }
+  }
+
+  const LAST_KEY = 'tw_last_submit';
+  function saveLastSubmit(body) {
+    try {
+      localStorage.setItem(LAST_KEY, JSON.stringify({
+        ts: body.ts, stretch: body.stretch, minutes: body.minutes, label: body.label,
+      }));
+    } catch (e) {}
+  }
+  function getLastSubmit() {
+    try { return JSON.parse(localStorage.getItem(LAST_KEY)); }
+    catch (e) { return null; }
+  }
+  // Returns the last submission iff it happened within the current local
+  // clock hour, otherwise null. Client-side lock that complements the
+  // server's 50-minute anti-spam window.
+  function loggedThisHour() {
+    const last = getLastSubmit();
+    if (!last || !last.ts) return null;
+    const now = new Date();
+    const then = new Date(last.ts * 1000);
+    const sameHour = now.getFullYear() === then.getFullYear()
+      && now.getMonth() === then.getMonth()
+      && now.getDate() === then.getDate()
+      && now.getHours() === then.getHours();
+    return sameHour ? last : null;
   }
 
   // Fire-and-forget flush on visibility / online events.
@@ -154,6 +185,7 @@
 
   window.TWApi = {
     submitHour, flushQueue, fetchWorldAggregate, fetchCohorts, fetchMyHistory,
+    getLastSubmit, loggedThisHour,
     SAMPLE_REGIONS, SAMPLE_COHORTS,
   };
 })();

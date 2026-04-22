@@ -46,6 +46,12 @@ function WorldScreen({ onBack, onCompare, worldStyle = 'globe' }) {
   const diffLabel = diffPct >= 0 ? `${diffPct}% longer` : `${-diffPct}% shorter`;
   const totalUsers = (agg && agg.totalUsers) || 2100000;
 
+  // The user's own log for the current clock hour, if any — surfaced above
+  // the world hero so "how does this compare?" is literal.
+  const mine = (window.TWApi && window.TWApi.loggedThisHour && window.TWApi.loggedThisHour()) || null;
+  const mineLabel = mine ? stretchToLabel(mine.stretch)[0] : null;
+  const mineHue = mine ? stretchToHue(mine.stretch) : 0;
+
   // Hemisphere split (derived client-side as a fallback when the aggregate
   // doesn't include precomputed hemisphere stats).
   const north = regions.filter(r => r.lat >= 0);
@@ -70,6 +76,29 @@ function WorldScreen({ onBack, onCompare, worldStyle = 'globe' }) {
         top: 100, left: 0, right: 0, bottom: 40,
         overflowY: 'auto', padding: '0 0 40px',
       }} className="no-scrollbar">
+
+        {/* Your hour — only shown when the user has already logged this
+            clock hour. Anchors the "see how this compares" prompt. */}
+        {mine && (
+          <div style={{ padding: '0 28px 18px', textAlign: 'center' }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>YOUR LAST HOUR</div>
+            <div style={{
+              display: 'inline-flex', alignItems: 'baseline', gap: 8,
+              padding: '8px 18px', borderRadius: 999,
+              background: `oklch(0.2 0.12 ${mineHue} / 0.35)`,
+              border: `1px solid oklch(0.6 0.25 ${mineHue} / 0.35)`,
+            }}>
+              <span style={{
+                fontFamily: 'var(--serif)', fontStyle: 'italic',
+                fontSize: 28, color: `oklch(0.9 0.2 ${mineHue})`,
+                letterSpacing: '-0.02em',
+                filter: `drop-shadow(0 0 12px oklch(0.7 0.3 ${mineHue} / 0.5))`,
+              }}>{mine.minutes}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.7, letterSpacing: '0.15em' }}>MIN</span>
+              <span style={{ fontSize: 13, color: 'var(--ink-dim)', marginLeft: 4 }}>· {mineLabel.toLowerCase()}</span>
+            </div>
+          </div>
+        )}
 
         {/* Hero readout */}
         <div style={{ padding: '0 28px', textAlign: 'center' }}>

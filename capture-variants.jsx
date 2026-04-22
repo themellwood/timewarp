@@ -812,6 +812,102 @@ function CapturePinch({ onSubmit, onOpenHistory, onOpenProfile }) {
   );
 }
 
+// ============================================================
+// LOCKED — shown on the capture route when the user has already
+// submitted within the current clock hour. One log per hour; the
+// world screen becomes the home until the next hour rolls in.
+// ============================================================
+function CaptureLocked({ last, onSeeWorld, onOpenHistory, onOpenProfile }) {
+  const stretch = Math.max(-1, Math.min(1, last.stretch));
+  const ro = readout(stretch);
+  const [label, sub] = stretchToLabel(stretch);
+
+  // Minutes until the next clock hour starts — that's when capture unlocks.
+  const [now, setNow] = useCapAlt(() => new Date());
+  useECapAlt(() => {
+    const id = setInterval(() => setNow(new Date()), 30 * 1000);
+    return () => clearInterval(id);
+  }, []);
+  const minsUntilUnlock = Math.max(1, 60 - now.getMinutes());
+
+  return (
+    <div className="screen" style={{
+      background: `
+        radial-gradient(ellipse 110% 70% at 50% 45%, oklch(0.28 0.22 ${ro.hue} / 0.45) 0%, transparent 60%),
+        radial-gradient(ellipse at 20% 0%, rgba(123, 44, 255, 0.14) 0%, transparent 50%),
+        #030006`,
+      transition: 'background 0.5s ease',
+    }}>
+      <div className="starfield" style={{ opacity: 0.4 }}/>
+
+      {onOpenHistory && window.CalendarButton && <window.CalendarButton onClick={onOpenHistory}/>}
+      {onOpenProfile && window.ProfileButton && <window.ProfileButton onClick={onOpenProfile}/>}
+
+      <div style={{
+        position: 'absolute', top: 72, left: 28, right: 28, textAlign: 'center',
+      }}>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>YOU LOGGED</div>
+        <div className="serif" style={{
+          fontSize: 28, lineHeight: 1.15, color: '#fff', letterSpacing: '-0.02em',
+        }}>
+          the last hour
+        </div>
+      </div>
+
+      {/* Orb-like core showing the user's reading */}
+      <div style={{
+        position: 'absolute', left: '50%', top: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 240, height: 240, borderRadius: '50%',
+        background: `
+          radial-gradient(circle at 35% 30%, oklch(0.9 0.2 ${ro.hue}) 0%, oklch(0.55 0.3 ${ro.hue}) 45%, oklch(0.2 0.15 ${ro.hue}) 100%)`,
+        boxShadow: `0 0 80px oklch(0.6 0.3 ${ro.hue} / 0.5), inset 0 2px 0 rgba(255,255,255,0.15)`,
+        display: 'grid', placeItems: 'center',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            fontFamily: 'var(--serif)', fontStyle: 'italic',
+            fontSize: 76, lineHeight: 1, color: '#fff',
+            letterSpacing: '-0.04em',
+            textShadow: '0 0 24px rgba(0,0,0,0.4)',
+          }}>{last.minutes}</div>
+          <div style={{
+            fontFamily: 'var(--mono)', fontSize: 11,
+            color: 'rgba(255,255,255,0.85)', letterSpacing: '0.25em',
+            marginTop: 4,
+          }}>MINUTES</div>
+        </div>
+      </div>
+
+      {/* Read-out + CTA */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 140, textAlign: 'center',
+      }}>
+        <div style={{
+          fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: 24,
+          color: '#fff', letterSpacing: '-0.02em', marginBottom: 6,
+        }}>
+          {label.toLowerCase()}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--ink-dim)' }}>
+          {sub} · next log in {minsUntilUnlock} min
+        </div>
+      </div>
+
+      <div style={{
+        position: 'absolute', bottom: 56, left: 28, right: 28,
+        display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center',
+      }}>
+        <button className="btn-primary" style={{ width: '100%', maxWidth: 300 }}
+          onClick={onSeeWorld}>
+          See how this compares →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   CaptureTimeline, CaptureDial, CaptureSqueeze, CaptureDraw, CapturePinch,
+  CaptureLocked,
 });

@@ -76,13 +76,21 @@ const CAPTURE_VARIANTS = [
 ];
 
 function pickInitialScreen() {
-  // Respect deep-links (?start=capture via notification), then last session,
-  // then: first-timers start in the intro; returning users go straight to capture.
+  // Respect deep-links (?start=capture via notification) first.
   const hash = (window.location.hash || '').replace(/^#/, '');
   if (hash && SCREENS.some((s) => s.id === hash)) return hash;
+  // First-timers always start in the intro.
+  if (!(window.TWProfile && window.TWProfile.hasOnboarded())) return 'onboard';
+  // Once per clock hour: if they've already logged this hour, the world is
+  // the home screen — capture is locked until the next hour rolls in.
+  const locked = window.TWApi && window.TWApi.loggedThisHour && window.TWApi.loggedThisHour();
+  if (locked) return 'world';
   const stored = localStorage.getItem('tw_screen');
+  // Don't keep the user stuck on 'world' after the lock has expired —
+  // they should land on capture so they can log the new hour.
+  if (stored === 'world') return 'capture';
   if (stored && SCREENS.some((s) => s.id === stored)) return stored;
-  return window.TWProfile && window.TWProfile.hasOnboarded() ? 'capture' : 'onboard';
+  return 'capture';
 }
 
 function App() {
@@ -142,6 +150,16 @@ function App() {
       <div className="app-root">
         {screen === 'onboard' && <Onboarding onDone={() => setScreen('capture')}/>}
         {screen === 'capture' && (() => {
+          // Once-per-hour lock: if the user has already logged this clock
+          // hour, we don't render the capture UI — instead we show a card
+          // that reflects their answer and points them at the world.
+          const last = window.TWApi && window.TWApi.loggedThisHour && window.TWApi.loggedThisHour();
+          if (last) {
+            return <CaptureLocked last={last}
+              onSeeWorld={() => setScreen('world')}
+              onOpenHistory={() => setScreen('history')}
+              onOpenProfile={() => setScreen('profile')}/>;
+          }
           // The five alternative capture UIs just hand us {stretch, minutes,
           // label} on submit and expect the host to persist + route.
           // CaptureScreen (the orb) posts internally; passing submitHour
