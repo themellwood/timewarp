@@ -29,6 +29,13 @@ function Onboarding({ onDone }) {
   const totalSteps = ONBOARD_STEPS.length + 1; // +1 for demographics
   const isDemographics = step === ONBOARD_STEPS.length;
 
+  // Skip-intro from any story step still needs to mark the user as
+  // onboarded, otherwise the intro shows again on every visit.
+  const skipIntro = () => {
+    if (window.TWProfile) window.TWProfile.setProfile({ onboardedAt: Date.now() });
+    onDone?.();
+  };
+
   if (isDemographics) {
     return <DemographicsStep stepIndex={step} totalSteps={totalSteps} onDone={onDone}/>;
   }
@@ -42,14 +49,14 @@ function Onboarding({ onDone }) {
         radial-gradient(ellipse at 20% 90%, rgba(123, 44, 255, 0.18) 0%, transparent 50%),
         #050008
       `,
+      display: 'flex', flexDirection: 'column',
+      padding: '48px 32px 40px',
     }}>
       <div className="starfield" style={{ opacity: 0.5 }}/>
 
-      {/* illustration */}
+      {/* illustration — fixed aspect, scales down on short screens */}
       <div style={{
-        position: 'absolute',
-        top: 90, left: 0, right: 0,
-        height: 280,
+        flex: '0 1 280px', minHeight: 180,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         {step === 0 && <OnboardIllo1/>}
@@ -57,21 +64,22 @@ function Onboarding({ onDone }) {
         {step === 2 && <OnboardIllo3/>}
       </div>
 
-      {/* text */}
+      {/* text — takes remaining space so it can't overflow into the CTA */}
       <div style={{
-        position: 'absolute',
-        left: 32, right: 32, top: 420,
+        flex: '1 1 auto', minHeight: 0,
+        display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+        paddingBottom: 16,
       }}>
-        <div className="eyebrow" key={step + 'e'} style={{ marginBottom: 20, animation: 'float-up 0.6s both' }}>
+        <div className="eyebrow" key={step + 'e'} style={{ marginBottom: 14, animation: 'float-up 0.6s both' }}>
           {d.eyebrow}
         </div>
         <h1
           key={step + 't'}
           className="serif enter"
           style={{
-            fontSize: 48, fontWeight: 400,
+            fontSize: 'clamp(36px, 9vw, 48px)', fontWeight: 400,
             lineHeight: 1.05, letterSpacing: '-0.02em',
-            color: '#fff', marginBottom: 20,
+            color: '#fff', marginBottom: 14,
           }}>
           {d.title.map((l, i) => <div key={i}>{l}</div>)}
         </h1>
@@ -87,24 +95,22 @@ function Onboarding({ onDone }) {
         </p>
       </div>
 
-      {/* progress */}
-      <div style={{
-        position: 'absolute', bottom: 150, left: 32,
-        display: 'flex', gap: 6,
-      }}>
-        {Array.from({ length: totalSteps }).map((_, i) => (
-          <div key={i} style={{
-            width: i === step ? 28 : 6,
-            height: 6, borderRadius: 100,
-            background: i === step ? '#ff3ea5' : 'rgba(255,255,255,0.15)',
-            boxShadow: i === step ? '0 0 10px #ff3ea5' : 'none',
-            transition: 'all 0.4s',
-          }}/>
-        ))}
-      </div>
+      {/* progress + CTA footer */}
+      <div style={{ flex: '0 0 auto' }}>
+        <div style={{
+          display: 'flex', gap: 6, marginBottom: 18,
+        }}>
+          {Array.from({ length: totalSteps }).map((_, i) => (
+            <div key={i} style={{
+              width: i === step ? 28 : 6,
+              height: 6, borderRadius: 100,
+              background: i === step ? '#ff3ea5' : 'rgba(255,255,255,0.15)',
+              boxShadow: i === step ? '0 0 10px #ff3ea5' : 'none',
+              transition: 'all 0.4s',
+            }}/>
+          ))}
+        </div>
 
-      {/* CTA */}
-      <div style={{ position: 'absolute', bottom: 56, left: 32, right: 32 }}>
         <button
           className="btn-primary"
           style={{ width: '100%' }}
@@ -113,10 +119,10 @@ function Onboarding({ onDone }) {
         </button>
         <button
           className="btn-ghost"
-          onClick={onDone}
+          onClick={skipIntro}
           style={{
             background: 'transparent', border: 0, color: 'var(--ink-faint)',
-            marginTop: 14, width: '100%', padding: 12,
+            marginTop: 10, width: '100%', padding: 8,
             fontFamily: 'var(--mono)', fontSize: 11,
             letterSpacing: '0.15em', textTransform: 'uppercase',
             cursor: 'pointer',
@@ -168,15 +174,17 @@ function DemographicsStep({ stepIndex, totalSteps, onDone }) {
         radial-gradient(ellipse at 20% 90%, rgba(123, 44, 255, 0.18) 0%, transparent 50%),
         #050008
       `,
+      display: 'flex', flexDirection: 'column',
+      padding: '48px 24px 40px',
     }}>
       <div className="starfield" style={{ opacity: 0.5 }}/>
 
-      <div style={{ position: 'absolute', top: 70, left: 32, right: 32 }}>
-        <div className="eyebrow" style={{ marginBottom: 16 }}>
+      <div style={{ flex: '0 0 auto', padding: '0 8px 20px' }}>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>
           INDEX: 0{stepIndex + 1} / 0{totalSteps}
         </div>
         <h1 className="serif" style={{
-          fontSize: 40, fontWeight: 400, lineHeight: 1.05,
+          fontSize: 'clamp(30px, 8vw, 40px)', fontWeight: 400, lineHeight: 1.05,
           letterSpacing: '-0.02em', color: '#fff', marginBottom: 10,
         }}>
           A few rough shapes<br/>about you.
@@ -191,7 +199,7 @@ function DemographicsStep({ stepIndex, totalSteps, onDone }) {
       </div>
 
       <div style={{
-        position: 'absolute', top: 230, left: 24, right: 24, bottom: 160,
+        flex: '1 1 auto', minHeight: 0,
         overflowY: 'auto',
       }} className="no-scrollbar">
         <DemoRow label="AGE">
@@ -232,22 +240,21 @@ function DemographicsStep({ stepIndex, totalSteps, onDone }) {
         </div>
       </div>
 
-      <div style={{
-        position: 'absolute', bottom: 150, left: 32,
-        display: 'flex', gap: 6,
-      }}>
-        {Array.from({ length: totalSteps }).map((_, i) => (
-          <div key={i} style={{
-            width: i === stepIndex ? 28 : 6,
-            height: 6, borderRadius: 100,
-            background: i === stepIndex ? '#ff3ea5' : 'rgba(255,255,255,0.15)',
-            boxShadow: i === stepIndex ? '0 0 10px #ff3ea5' : 'none',
-            transition: 'all 0.4s',
-          }}/>
-        ))}
-      </div>
+      <div style={{ flex: '0 0 auto', paddingTop: 14 }}>
+        <div style={{
+          display: 'flex', gap: 6, marginBottom: 16, paddingLeft: 8,
+        }}>
+          {Array.from({ length: totalSteps }).map((_, i) => (
+            <div key={i} style={{
+              width: i === stepIndex ? 28 : 6,
+              height: 6, borderRadius: 100,
+              background: i === stepIndex ? '#ff3ea5' : 'rgba(255,255,255,0.15)',
+              boxShadow: i === stepIndex ? '0 0 10px #ff3ea5' : 'none',
+              transition: 'all 0.4s',
+            }}/>
+          ))}
+        </div>
 
-      <div style={{ position: 'absolute', bottom: 56, left: 32, right: 32 }}>
         <button className="btn-primary" style={{ width: '100%' }} onClick={save}>
           Begin
         </button>
@@ -255,7 +262,7 @@ function DemographicsStep({ stepIndex, totalSteps, onDone }) {
           onClick={save}
           style={{
             background: 'transparent', border: 0, color: 'var(--ink-faint)',
-            marginTop: 14, width: '100%', padding: 12,
+            marginTop: 10, width: '100%', padding: 8,
             fontFamily: 'var(--mono)', fontSize: 11,
             letterSpacing: '0.15em', textTransform: 'uppercase',
             cursor: 'pointer',

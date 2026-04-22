@@ -37,7 +37,10 @@
 
   function hasOnboarded() {
     const p = getProfile();
-    return Boolean(p.ageBucket || (p.interests && p.interests.length));
+    // `onboardedAt` is stamped whenever the user leaves the demographics
+    // step (even if they skipped without entering anything) — that's the
+    // real signal. The demographic fields are optional.
+    return Boolean(p.onboardedAt || p.ageBucket || (p.interests && p.interests.length));
   }
 
   // Coarse N/S lookup from IANA timezone. Africa straddles the equator so
