@@ -292,7 +292,25 @@ function NotifyRow({ mode, setMode, wakeStart, setWakeStart, wakeEnd, setWakeEnd
     if (h < 12) return `${h} am`;
     return `${h - 12} pm`;
   };
+  const fmtTime = (ts) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  };
   const muted = mode === 'off';
+
+  // Live diagnostics — so the user sees if the OS actually scheduled the
+  // pings, or if the browser silently dropped them because TimestampTrigger
+  // isn't supported in their Chrome.
+  const [diag, setDiag] = useStateS1(null);
+  const refreshDiag = async () => {
+    if (!window.TWNotifications || !window.TWNotifications.diagnostics) return;
+    try { setDiag(await window.TWNotifications.diagnostics()); } catch (e) {}
+  };
+  useEffectS1(() => {
+    refreshDiag();
+    const id = setInterval(refreshDiag, 5000);
+    return () => clearInterval(id);
+  }, [mode, wakeStart, wakeEnd]);
 
   // Test-ping state — fires an immediate notification so the user can
   // confirm permissions + delivery before waiting for a real schedule.
@@ -309,6 +327,7 @@ function NotifyRow({ mode, setMode, wakeStart, setWakeStart, wakeEnd, setWakeEnd
       else { setPingState('error'); setPingErr(r.error || ''); }
     } catch (e) { setPingState('error'); setPingErr(String(e && e.message || e)); }
     setTimeout(() => setPingState('idle'), 4000);
+    refreshDiag();
   };
   const pingLabel = {
     idle: 'Send test ping',
@@ -381,6 +400,41 @@ function NotifyRow({ mode, setMode, wakeStart, setWakeStart, wakeEnd, setWakeEnd
         {mode === 'daily' && `One gentle ping at a random time between ${fmt(wakeStart)} and ${fmt(wakeEnd)}.`}
         {mode === 'hourly' && `A ping at the top of every hour from ${fmt(wakeStart)} until ${fmt(wakeEnd)}. That's ${wakeEnd - wakeStart} a day.`}
       </div>
+
+      {/* Honest diagnostics — if TimestampTrigger isn't supported in this
+          browser, scheduled pings won't fire in the background and the user
+          needs to know before they wait for a ping that'll never arrive. */}
+      {!muted && diag && (
+        <div style={{
+          marginTop: 12, padding: '10px 12px', borderRadius: 10,
+          background: diag.triggersAPI && diag.registered > 0
+            ? 'rgba(79, 233, 255, 0.06)'
+            : 'rgba(255, 149, 0, 0.08)',
+          border: `1px solid ${diag.triggersAPI && diag.registered > 0
+            ? 'rgba(79, 233, 255, 0.2)'
+            : 'rgba(255, 149, 0, 0.25)'}`,
+          fontFamily: 'var(--mono)', fontSize: 10,
+          color: 'var(--ink-dim)', letterSpacing: '0.08em', lineHeight: 1.7,
+        }}>
+          <div>PERMISSION · <span style={{ color: diag.permission === 'granted' ? '#4fe9ff' : '#ff9500' }}>{diag.permission.toUpperCase()}</span></div>
+          <div>BACKGROUND TRIGGERS · <span style={{ color: diag.triggersAPI ? '#4fe9ff' : '#ff9500' }}>{diag.triggersAPI ? 'SUPPORTED' : 'NOT IN THIS BROWSER'}</span></div>
+          <div>SCHEDULED · <span style={{ color: diag.registered > 0 ? '#4fe9ff' : 'var(--ink-faint)' }}>{diag.registered} / {diag.plannedCount} pings</span></div>
+          {diag.plannedFirst && (
+            <div>NEXT PLANNED · <span style={{ color: 'var(--ink-dim)' }}>{fmtTime(diag.plannedFirst)}</span></div>
+          )}
+          {!diag.triggersAPI && (
+            <div style={{
+              marginTop: 8, paddingTop: 8,
+              borderTop: '1px solid rgba(255,149,0,0.2)',
+              fontFamily: 'var(--serif)', fontStyle: 'italic',
+              fontSize: 12, color: 'rgba(255,255,255,0.65)',
+              letterSpacing: 0, lineHeight: 1.45,
+            }}>
+              This browser won't wake the app for scheduled pings. You'll only be nudged when you open Time Warp after the scheduled time.
+            </div>
+          )}
+        </div>
+      )}
 
       <button
         onClick={runTestPing}

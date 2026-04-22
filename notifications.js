@@ -120,14 +120,21 @@
     localStorage.setItem(PING_KEY, String(schedule[0]));
 
     await clearExistingTriggers();
+    // Hard gate: if the browser doesn't expose TimestampTrigger (it's still
+    // experimental and not shipped in stable Chrome), don't attempt — the
+    // calls would just throw silently. Fall back to foreground nudges.
+    if (typeof TimestampTrigger === 'undefined') {
+      return { ok: true, mode, count: 0, method: 'foreground', reason: 'no-triggers' };
+    }
+    let scheduled = 0;
     try {
       for (let i = 0; i < schedule.length; i++) {
         await scheduleTrigger(schedule[i], i);
+        scheduled++;
       }
-      return { ok: true, mode, count: schedule.length, method: 'trigger' };
+      return { ok: true, mode, count: scheduled, method: 'trigger' };
     } catch (e) {
-      // Triggers unsupported — fall back to in-app nudge on the next visit.
-      return { ok: true, mode, count: schedule.length, method: 'foreground' };
+      return { ok: true, mode, count: scheduled, method: 'foreground', reason: 'trigger-error', error: String(e && e.message || e) };
     }
   }
 
@@ -188,6 +195,29 @@
     }
   }
 
-  // Expose `computeSchedule` so the settings UI can preview the next ping.
-  window.TWNotifications = { requestAndSchedule, computeSchedule, testPing };
+  // Runtime support + state snapshot, used by the settings panel to show
+  // honest diagnostics (permission, trigger support, registered count).
+  async function diagnostics() {
+    const supported = ('Notification' in window) && ('serviceWorker' in navigator);
+    const triggersAPI = typeof window.TimestampTrigger !== 'undefined';
+    const permission = supported ? Notification.permission : 'unsupported';
+    let registered = 0;
+    if (supported) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const all = await reg.getNotifications({ includeTriggered: false });
+        registered = all.filter((n) => (n.tag || '').startsWith(TAG)).length;
+      } catch (e) { /* ignore */ }
+    }
+    const nextPingTs = Number(localStorage.getItem(PING_KEY)) || null;
+    const schedule = computeSchedule();
+    return {
+      supported, triggersAPI, permission,
+      registered, nextPingTs,
+      plannedCount: schedule.length,
+      plannedFirst: schedule[0] || null,
+    };
+  }
+
+  window.TWNotifications = { requestAndSchedule, computeSchedule, testPing, diagnostics };
 })();
