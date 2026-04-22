@@ -1,12 +1,17 @@
 /* Time Warp — Cloudflare Worker.
  * POST /submit  → append one row
  * GET  /world/latest.json → serve the cached aggregate from R2
+ * POST /push/subscribe    → store a Web Push subscription + schedule
+ * POST /push/unsubscribe  → remove a subscription
  * GET  /health  → 200 ok
  * Cron (hourly): recompute the aggregate.
  * Cron (daily):  dump yesterday's UTC rows to R2 as CSV.
+ * Cron (5-min):  fan out Web Push notifications for due subscribers.
  */
 
-export interface Env {
+import { sendPush, type VapidEnv, type PushSubscriptionRow } from './push';
+
+export interface Env extends VapidEnv {
   DB: D1Database;
   PUBLIC: R2Bucket;
   FRONTEND_ORIGIN?: string;
@@ -147,6 +152,61 @@ export default {
       });
     }
 
+    // Push subscribe — upsert a device's subscription + scheduling prefs.
+    // Called every time the user flips notification settings or grants
+    // permission, so "re-subscribe" is idempotent. Body shape:
+    //   { anon_id, subscription: { endpoint, keys: { p256dh, auth } },
+    //     mode: 'daily'|'hourly', wakeStart, wakeEnd, tz }
+    if (url.pathname === '/push/subscribe' && req.method === 'POST') {
+      let body: any;
+      try { body = await req.json(); }
+      catch { return json({ error: 'invalid json' }, { status: 400 }); }
+      const p = validatePush(body);
+      if (!p.ok) return json({ error: p.error }, { status: 400 });
+
+      // Pick a deterministic daily ping slot so the user doesn't get
+      // multiple pings per day and it stays stable across re-subscribes.
+      const h = await hashToInt(p.value.anon_id + '|daily');
+      const span = Math.max(1, p.value.wakeEnd - p.value.wakeStart);
+      const dailyHour = p.value.wakeStart + (h % span);
+      const dailyMinute = (h >> 8) % 60;
+
+      const now = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(
+        `INSERT INTO push_subscriptions
+          (anon_id, endpoint, p256dh, auth, mode, wake_start, wake_end, tz,
+           daily_hour, daily_minute, fail_count, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+         ON CONFLICT(anon_id) DO UPDATE SET
+           endpoint = excluded.endpoint,
+           p256dh = excluded.p256dh,
+           auth = excluded.auth,
+           mode = excluded.mode,
+           wake_start = excluded.wake_start,
+           wake_end = excluded.wake_end,
+           tz = excluded.tz,
+           daily_hour = excluded.daily_hour,
+           daily_minute = excluded.daily_minute,
+           fail_count = 0,
+           updated_at = excluded.updated_at`
+      ).bind(
+        p.value.anon_id, p.value.endpoint, p.value.p256dh, p.value.auth,
+        p.value.mode, p.value.wakeStart, p.value.wakeEnd, p.value.tz,
+        dailyHour, dailyMinute, now,
+      ).run();
+      return json({ ok: true, dailyHour, dailyMinute });
+    }
+
+    if (url.pathname === '/push/unsubscribe' && req.method === 'POST') {
+      let body: any;
+      try { body = await req.json(); }
+      catch { return json({ error: 'invalid json' }, { status: 400 }); }
+      const anonId = String(body?.anon_id || '');
+      if (anonId.length < 8 || anonId.length > 64) return json({ error: 'anon_id' }, { status: 400 });
+      await env.DB.prepare('DELETE FROM push_subscriptions WHERE anon_id = ?').bind(anonId).run();
+      return json({ ok: true });
+    }
+
     // Per-user history — last N days of this anon_id's submissions.
     // Not cached at the edge so the caller sees their latest row immediately
     // after posting. anon_id is pseudonymous but treat it as a secret of the
@@ -176,11 +236,134 @@ export default {
   },
 
   async scheduled(event: ScheduledController, env: Env): Promise<void> {
-    const minute = new Date(event.scheduledTime).getUTCMinutes();
-    if (event.cron === '5 0 * * *') await dumpDaily(env);
-    else if (minute === 0) await aggregate(env);
+    // Cron dispatch. We differentiate by the exact cron expression (the
+    // most reliable way in Workers) — a */5 tick happens 12× each hour
+    // and every hour also has a matching top-of-hour */5 tick, so we
+    // explicitly branch on the expression rather than on the minute.
+    if (event.cron === '5 0 * * *') { await dumpDaily(env); return; }
+    if (event.cron === '0 * * * *') { await aggregate(env); return; }
+    if (event.cron === '*/5 * * * *') { await pushSweep(env); return; }
+    // Fallback for mis-configured crons — don't hang.
   },
 };
+
+// ---- push subscribe body validation ----
+function validatePush(body: any):
+  | { ok: true; value: { anon_id: string; endpoint: string; p256dh: string; auth: string; mode: 'daily' | 'hourly'; wakeStart: number; wakeEnd: number; tz: string } }
+  | { ok: false; error: string } {
+  if (!body || typeof body !== 'object') return { ok: false, error: 'bad body' };
+  const anon_id = String(body.anon_id || '');
+  if (anon_id.length < 8 || anon_id.length > 64) return { ok: false, error: 'anon_id' };
+  const sub = body.subscription;
+  if (!sub || typeof sub !== 'object') return { ok: false, error: 'subscription' };
+  const endpoint = String(sub.endpoint || '');
+  if (!/^https:\/\//.test(endpoint) || endpoint.length > 2048) return { ok: false, error: 'endpoint' };
+  const keys = sub.keys || {};
+  const p256dh = String(keys.p256dh || '');
+  const auth = String(keys.auth || '');
+  if (p256dh.length < 20 || p256dh.length > 200) return { ok: false, error: 'p256dh' };
+  if (auth.length < 10 || auth.length > 100) return { ok: false, error: 'auth' };
+  const mode = body.mode === 'hourly' ? 'hourly' : 'daily';
+  const wakeStart = Math.max(0, Math.min(23, Number(body.wakeStart)));
+  const wakeEnd = Math.max(wakeStart + 1, Math.min(24, Number(body.wakeEnd)));
+  const tz = String(body.tz || 'UTC').slice(0, 64);
+  return { ok: true, value: { anon_id, endpoint, p256dh, auth, mode, wakeStart, wakeEnd, tz } };
+}
+
+async function hashToInt(s: string): Promise<number> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  const b = new Uint8Array(buf);
+  return (b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]) >>> 0;
+}
+
+// ---- Local-time helpers (tz-aware) ----
+// Resolve an IANA zone into the current local hour/minute. We pay for a
+// formatter per call — it's fine for a few hundred subs per sweep.
+function localHourMinute(tz: string, now = new Date()): { hour: number; minute: number } {
+  try {
+    const f = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit',
+    });
+    // en-GB formats "HH:MM" which is easy to parse.
+    const parts = f.format(now).split(':');
+    return { hour: Number(parts[0]) % 24, minute: Number(parts[1]) };
+  } catch {
+    return { hour: now.getUTCHours(), minute: now.getUTCMinutes() };
+  }
+}
+
+// ---- cron: 5-minute push sweep ----
+// Invoked on every */5 tick. Pulls everyone who's due for a ping and
+// dispatches to each in parallel (capped for backpressure).
+async function pushSweep(env: Env) {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
+    // Secrets not configured — silently no-op. The admin is expected to
+    // set these via `wrangler secret put`; see worker/README.md.
+    return;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const nowMs = now * 1000;
+  // Only rows that haven't been pinged in the last 50 minutes, to prevent
+  // duplicates if a sweep runs twice (retries, manual invocation).
+  const rows = await env.DB.prepare(
+    `SELECT anon_id, endpoint, p256dh, auth, mode, wake_start, wake_end,
+            tz, daily_hour, daily_minute, last_pinged_at, fail_count
+     FROM push_subscriptions
+     WHERE fail_count < 5
+       AND (last_pinged_at IS NULL OR last_pinged_at < ?)`
+  ).bind(now - 50 * 60).all<any>();
+
+  const due = (rows.results || []).filter((r: any) => isDue(r, new Date(nowMs)));
+
+  // Dispatch in batches to keep the Workers CPU budget reasonable.
+  const BATCH = 10;
+  for (let i = 0; i < due.length; i += BATCH) {
+    await Promise.all(due.slice(i, i + BATCH).map((r: any) => dispatchOne(env, r, now)));
+  }
+}
+
+function isDue(row: any, now: Date): boolean {
+  const { hour, minute } = localHourMinute(row.tz, now);
+  const within = hour >= row.wake_start && hour < row.wake_end;
+  if (!within) return false;
+  if (row.mode === 'hourly') {
+    // Fire at the top of every wake-window hour, within a 5-minute window
+    // so we catch the */5 tick regardless of exact cron drift.
+    return minute < 5;
+  }
+  // 'daily' — only at the deterministic per-user slot.
+  if (row.daily_hour == null || row.daily_minute == null) return false;
+  if (hour !== row.daily_hour) return false;
+  return Math.abs(minute - row.daily_minute) < 5;
+}
+
+async function dispatchOne(env: Env, row: any, now: number): Promise<void> {
+  const sub: PushSubscriptionRow = {
+    endpoint: row.endpoint, p256dh: row.p256dh, auth: row.auth,
+  };
+  try {
+    const r = await sendPush(env, sub);
+    if (r.ok) {
+      await env.DB.prepare(
+        `UPDATE push_subscriptions SET last_pinged_at = ?, fail_count = 0 WHERE anon_id = ?`
+      ).bind(now, row.anon_id).run();
+      return;
+    }
+    // 404 / 410: subscription is gone. Delete it so we stop trying.
+    if (r.status === 404 || r.status === 410) {
+      await env.DB.prepare('DELETE FROM push_subscriptions WHERE anon_id = ?').bind(row.anon_id).run();
+      return;
+    }
+    await env.DB.prepare(
+      `UPDATE push_subscriptions SET last_failed_at = ?, fail_count = fail_count + 1 WHERE anon_id = ?`
+    ).bind(now, row.anon_id).run();
+  } catch (e) {
+    await env.DB.prepare(
+      `UPDATE push_subscriptions SET last_failed_at = ?, fail_count = fail_count + 1 WHERE anon_id = ?`
+    ).bind(now, row.anon_id).run();
+  }
+}
 
 // ---- aggregate: write world/latest.json + cohorts/latest.json ----
 async function aggregate(env: Env) {

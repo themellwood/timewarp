@@ -2,7 +2,7 @@
  * App-shell cache + notification click handling. Kept intentionally small.
  */
 
-const VERSION = 'tw-v14';
+const VERSION = 'tw-v15';
 const SHELL = [
   './',
   'index.html',
@@ -85,5 +85,39 @@ self.addEventListener('notificationclick', (e) => {
       if ('focus' in c) { await c.focus(); c.postMessage({ type: 'tw:route', route }); return; }
     }
     await self.clients.openWindow('./#' + route);
+  })());
+});
+
+// Web Push — the Worker sends a payloadless push at scheduled times.
+// All pushes look identical; the user just sees "How long did the last
+// hour take?" and tapping it routes to the capture screen.
+self.addEventListener('push', (e) => {
+  let title = 'Time Warp';
+  let body = 'How long did the last hour take?';
+  // If the server ever adds a payload, honor it; otherwise use the defaults.
+  if (e.data) {
+    try {
+      const p = e.data.json();
+      if (p.title) title = p.title;
+      if (p.body) body = p.body;
+    } catch (_) { /* non-JSON payload — ignore */ }
+  }
+  e.waitUntil(self.registration.showNotification(title, {
+    tag: 'tw-push',
+    body,
+    icon: 'icons/icon.svg',
+    badge: 'icons/icon.svg',
+    data: { route: 'capture' },
+  }));
+});
+
+// If the push service rotates the user's subscription (rare but
+// spec-required to handle), grab the new one and re-POST to the Worker
+// so we keep pinging the same device. The client owns anon_id, so we
+// ask the page to re-subscribe next time it's open.
+self.addEventListener('pushsubscriptionchange', (e) => {
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    all.forEach((c) => c.postMessage({ type: 'tw:push-resubscribe' }));
   })());
 });

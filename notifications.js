@@ -1,20 +1,26 @@
-/* Time Warp — local ping scheduler.
- * We don't own a push server — scheduling lives on the device.
+/* Time Warp — notification scheduler (Web Push).
  *
- * Preferred: Notification Triggers API (Chrome Android, `showTrigger` with
- * `TimestampTrigger`) — fires even if the PWA isn't running.
- * Fallback: store the next ping timestamp in localStorage, show an in-app
- * nudge when the user returns to the tab after that time.
+ * The real background-delivery path is Web Push via the Cloudflare Worker.
+ *  - We create a PushSubscription in the browser (signed with the server's
+ *    VAPID public key) and POST it — along with the user's wake window and
+ *    mode — to /push/subscribe.
+ *  - The Worker's 5-minute cron fans out payloadless pushes at the user's
+ *    local schedule. The service worker's 'push' handler shows the
+ *    notification (see sw.js).
  *
- * Modes (read from TWProfile.getNotifyPrefs):
- *   - 'off':    schedule nothing.
- *   - 'daily':  one ping at a random minute inside the wake window.
- *   - 'hourly': one ping at the top of each wake-window hour, for the
- *               next 24 hours. Re-scheduled whenever the user reopens.
+ * Fallbacks, in order:
+ *  - Notification Triggers API (showTrigger) — if the browser exposes it,
+ *    we also register local triggers as a backup. It's rare to have it
+ *    available, but harmless when it is.
+ *  - Foreground nudge — if push is blocked or VAPID isn't configured,
+ *    we still show an in-app prompt the next time the app is opened
+ *    after the scheduled time.
  */
 (function () {
   const PING_KEY = 'tw_next_ping';
   const TAG = 'tw-daily';
+  const API_BASE = (window.TW_API_BASE || 'https://timewarp-api.perky.workers.dev');
+  const VAPID_PUBLIC = window.TW_VAPID_PUBLIC_KEY || '';
 
   function prefs() {
     if (window.TWProfile && window.TWProfile.getNotifyPrefs) {
@@ -23,35 +29,36 @@
     return { mode: 'daily', wakeStart: 9, wakeEnd: 21 };
   }
 
-  // Compute the timestamps we want to fire notifications at, starting from
-  // `now`. Daily mode returns a single random-inside-window time. Hourly
-  // mode returns one per wake-window hour for the next ~24h.
+  function anonId() {
+    return window.TWProfile ? window.TWProfile.getAnonId() : null;
+  }
+
+  // ---- base64url decode for the VAPID public key ----
+  function urlB64ToUint8Array(s) {
+    const pad = s.length % 4 === 0 ? 0 : 4 - (s.length % 4);
+    const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(pad);
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  // ---- compute planned schedule (same shape as before, used for UI preview) ----
   function computeSchedule(now = new Date()) {
     const { mode, wakeStart, wakeEnd } = prefs();
     if (mode === 'off') return [];
-
-    const atHour = (d, h) => {
-      const x = new Date(d); x.setHours(h, 0, 0, 0); return x;
-    };
-
+    const atHour = (d, h) => { const x = new Date(d); x.setHours(h, 0, 0, 0); return x; };
     if (mode === 'hourly') {
       const out = [];
-      // Start with today's remaining wake-window hours, then tomorrow.
       for (let dayOffset = 0; dayOffset <= 1 && out.length < 24; dayOffset++) {
         const day = new Date(now); day.setDate(day.getDate() + dayOffset);
         for (let h = wakeStart; h < wakeEnd && out.length < 24; h++) {
           const t = atHour(day, h).getTime();
-          // Skip anything in the past or within the next 5 minutes — we
-          // don't want to ping the user about this same hour they just
-          // opened the app.
           if (t > now.getTime() + 5 * 60 * 1000) out.push(t);
         }
       }
       return out;
     }
-
-    // 'daily' — one ping at a random minute inside today's remaining
-    // wake window, or tomorrow's window if we're past it.
     const todayStart = atHour(now, wakeStart).getTime();
     const todayEnd = atHour(now, wakeEnd).getTime();
     let windowStart, windowEnd;
@@ -67,41 +74,103 @@
     return [windowStart + Math.floor(Math.random() * span)];
   }
 
-  async function scheduleTrigger(at, index) {
+  // ---- Push subscription create/update ----
+  async function getOrCreateSubscription() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      throw new Error('push-unsupported');
+    }
+    if (!VAPID_PUBLIC) throw new Error('vapid-missing');
     const reg = await navigator.serviceWorker.ready;
-    if (!('showNotification' in reg)) throw new Error('no-sw-notifications');
-    if (typeof TimestampTrigger === 'undefined') throw new Error('no-triggers');
-    await reg.showNotification('Time Warp', {
-      tag: `${TAG}-${index}`,
-      body: 'How long did the last hour take?',
-      icon: 'icons/icon.svg',
-      badge: 'icons/icon.svg',
-      showTrigger: new TimestampTrigger(at),
-      data: { route: 'capture' },
-    });
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC),
+      });
+    }
+    return sub;
   }
 
+  function subscriptionToJson(sub) {
+    // sub.toJSON() exists on PushSubscription and is the wire-safe shape.
+    return sub.toJSON ? sub.toJSON() : JSON.parse(JSON.stringify(sub));
+  }
+
+  async function sendSubscribeToServer(sub) {
+    const id = anonId();
+    if (!id) return { ok: false, reason: 'no-anon' };
+    const { mode, wakeStart, wakeEnd } = prefs();
+    const tz = (window.TWProfile && window.TWProfile.getTimezone) ? window.TWProfile.getTimezone() : 'UTC';
+    const r = await fetch(API_BASE + '/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        anon_id: id,
+        subscription: subscriptionToJson(sub),
+        mode, wakeStart, wakeEnd, tz,
+      }),
+    });
+    if (!r.ok) return { ok: false, status: r.status };
+    const data = await r.json().catch(() => ({}));
+    return { ok: true, data };
+  }
+
+  async function sendUnsubscribeToServer() {
+    const id = anonId();
+    if (!id) return;
+    try {
+      await fetch(API_BASE + '/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anon_id: id }),
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---- Optional: still register Triggers if available ----
   async function clearExistingTriggers() {
     try {
       const reg = await navigator.serviceWorker.ready;
-      // Triggered + untriggered, any tag that belongs to us.
       const all = await reg.getNotifications({ includeTriggered: false });
       all.forEach((n) => { if (n.tag && n.tag.startsWith(TAG)) n.close(); });
     } catch (e) { /* ignore */ }
   }
+  async function scheduleTriggerIfSupported(schedule) {
+    if (typeof TimestampTrigger === 'undefined') return 0;
+    const reg = await navigator.serviceWorker.ready;
+    let count = 0;
+    for (let i = 0; i < schedule.length; i++) {
+      try {
+        await reg.showNotification('Time Warp', {
+          tag: `${TAG}-${i}`,
+          body: 'How long did the last hour take?',
+          icon: 'icons/icon.svg',
+          badge: 'icons/icon.svg',
+          showTrigger: new TimestampTrigger(schedule[i]),
+          data: { route: 'capture' },
+        });
+        count++;
+      } catch (e) { break; }
+    }
+    return count;
+  }
 
-  // Single public entry-point. Re-reads prefs each call and re-schedules
-  // from scratch so settings changes take effect immediately.
+  // ---- Public entry-point ----
   async function requestAndSchedule() {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       return { ok: false, reason: 'unsupported' };
     }
     const { mode } = prefs();
 
-    // 'off' short-circuits — clear anything already scheduled.
     if (mode === 'off') {
       await clearExistingTriggers();
       localStorage.removeItem(PING_KEY);
+      await sendUnsubscribeToServer();
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) await sub.unsubscribe();
+      } catch (e) {}
       return { ok: true, mode: 'off' };
     }
 
@@ -112,35 +181,32 @@
     }
 
     const schedule = computeSchedule();
-    if (!schedule.length) {
-      return { ok: true, mode, count: 0 };
-    }
-
-    // Foreground fallback key is the soonest upcoming ping.
-    localStorage.setItem(PING_KEY, String(schedule[0]));
+    if (schedule.length) localStorage.setItem(PING_KEY, String(schedule[0]));
 
     await clearExistingTriggers();
-    // Hard gate: if the browser doesn't expose TimestampTrigger (it's still
-    // experimental and not shipped in stable Chrome), don't attempt — the
-    // calls would just throw silently. Fall back to foreground nudges.
-    if (typeof TimestampTrigger === 'undefined') {
-      return { ok: true, mode, count: 0, method: 'foreground', reason: 'no-triggers' };
-    }
-    let scheduled = 0;
+
+    // The real path: register a Web Push subscription and tell the server
+    // about our schedule. Server cron fires the actual pings.
+    let pushResult = { ok: false, reason: 'not-attempted' };
     try {
-      for (let i = 0; i < schedule.length; i++) {
-        await scheduleTrigger(schedule[i], i);
-        scheduled++;
-      }
-      return { ok: true, mode, count: scheduled, method: 'trigger' };
+      const sub = await getOrCreateSubscription();
+      pushResult = await sendSubscribeToServer(sub);
     } catch (e) {
-      return { ok: true, mode, count: scheduled, method: 'foreground', reason: 'trigger-error', error: String(e && e.message || e) };
+      pushResult = { ok: false, reason: e.message || 'push-error' };
     }
+
+    // Opportunistic local trigger as a secondary belt-and-braces.
+    const triggerCount = await scheduleTriggerIfSupported(schedule);
+
+    return {
+      ok: true, mode,
+      push: pushResult,
+      triggerCount,
+      method: pushResult.ok ? 'push' : (triggerCount > 0 ? 'trigger' : 'foreground'),
+    };
   }
 
-  // Foreground fallback — if we missed a scheduled ping because triggers
-  // are unsupported, show an in-app toast the next time the app is
-  // opened after `at`. The shell listens for `tw:daily-ping`.
+  // ---- Foreground fallback — only relevant when Push is unavailable ----
   function checkForegroundPing() {
     const atStr = localStorage.getItem(PING_KEY);
     if (!atStr) return;
@@ -148,7 +214,6 @@
     if (!isFinite(at) || Date.now() < at) return;
     localStorage.removeItem(PING_KEY);
     window.dispatchEvent(new CustomEvent('tw:daily-ping'));
-    // Reschedule the next window immediately.
     requestAndSchedule().catch(() => {});
   }
 
@@ -157,8 +222,14 @@
   });
   window.addEventListener('load', checkForegroundPing);
 
-  // Fire a notification right now — smoke-test from the settings panel.
-  // Returns a structured result so the UI can surface what happened.
+  // SW asks us to re-subscribe (rare — push service rotated our endpoint).
+  navigator.serviceWorker?.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'tw:push-resubscribe') {
+      requestAndSchedule().catch(() => {});
+    }
+  });
+
+  // ---- Immediate smoke test ----
   async function testPing() {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       return { ok: false, reason: 'unsupported' };
@@ -176,17 +247,13 @@
         icon: 'icons/icon.svg',
         badge: 'icons/icon.svg',
         data: { route: 'capture' },
-        // No showTrigger — fire immediately.
       });
       return { ok: true, method: 'sw' };
     } catch (e) {
-      // Some browsers (desktop Safari, old Chromium) refuse SW-scoped
-      // notifications and only accept the page-scoped constructor.
       try {
         new Notification('Time Warp · test', {
           body: 'Notifications are working (page scope).',
-          icon: 'icons/icon.svg',
-          tag: 'tw-test',
+          icon: 'icons/icon.svg', tag: 'tw-test',
         });
         return { ok: true, method: 'page' };
       } catch (err) {
@@ -195,24 +262,35 @@
     }
   }
 
-  // Runtime support + state snapshot, used by the settings panel to show
-  // honest diagnostics (permission, trigger support, registered count).
+  // ---- Diagnostics for the settings UI ----
   async function diagnostics() {
     const supported = ('Notification' in window) && ('serviceWorker' in navigator);
+    const pushAPI = ('PushManager' in window);
     const triggersAPI = typeof window.TimestampTrigger !== 'undefined';
     const permission = supported ? Notification.permission : 'unsupported';
     let registered = 0;
+    let pushSubscribed = false;
+    let pushEndpointHost = null;
     if (supported) {
       try {
         const reg = await navigator.serviceWorker.ready;
         const all = await reg.getNotifications({ includeTriggered: false });
         registered = all.filter((n) => (n.tag || '').startsWith(TAG)).length;
+        if (pushAPI) {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            pushSubscribed = true;
+            try { pushEndpointHost = new URL(sub.endpoint).hostname; } catch {}
+          }
+        }
       } catch (e) { /* ignore */ }
     }
     const nextPingTs = Number(localStorage.getItem(PING_KEY)) || null;
     const schedule = computeSchedule();
     return {
-      supported, triggersAPI, permission,
+      supported, pushAPI, triggersAPI, permission,
+      vapidConfigured: Boolean(VAPID_PUBLIC),
+      pushSubscribed, pushEndpointHost,
       registered, nextPingTs,
       plannedCount: schedule.length,
       plannedFirst: schedule[0] || null,

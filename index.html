@@ -27,6 +27,10 @@
 <script>
   window.TW_API_BASE  = 'https://timewarp-api.perky.workers.dev';
   window.TW_DATA_BASE = 'https://timewarp-api.perky.workers.dev';
+  // VAPID public key (raw uncompressed P-256, base64url). Paste the value
+  // printed by `npx web-push generate-vapid-keys`. Until this is filled in,
+  // the client falls back to foreground-only nudges. See worker/README.md.
+  window.TW_VAPID_PUBLIC_KEY = '';
 </script>
 
 <!-- device profile, API client, local notification scheduler: classic scripts, attach helpers to window -->

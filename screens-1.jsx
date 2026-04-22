@@ -401,40 +401,51 @@ function NotifyRow({ mode, setMode, wakeStart, setWakeStart, wakeEnd, setWakeEnd
         {mode === 'hourly' && `A ping at the top of every hour from ${fmt(wakeStart)} until ${fmt(wakeEnd)}. That's ${wakeEnd - wakeStart} a day.`}
       </div>
 
-      {/* Honest diagnostics — if TimestampTrigger isn't supported in this
-          browser, scheduled pings won't fire in the background and the user
-          needs to know before they wait for a ping that'll never arrive. */}
-      {!muted && diag && (
-        <div style={{
-          marginTop: 12, padding: '10px 12px', borderRadius: 10,
-          background: diag.triggersAPI && diag.registered > 0
-            ? 'rgba(79, 233, 255, 0.06)'
-            : 'rgba(255, 149, 0, 0.08)',
-          border: `1px solid ${diag.triggersAPI && diag.registered > 0
-            ? 'rgba(79, 233, 255, 0.2)'
-            : 'rgba(255, 149, 0, 0.25)'}`,
-          fontFamily: 'var(--mono)', fontSize: 10,
-          color: 'var(--ink-dim)', letterSpacing: '0.08em', lineHeight: 1.7,
-        }}>
-          <div>PERMISSION · <span style={{ color: diag.permission === 'granted' ? '#4fe9ff' : '#ff9500' }}>{diag.permission.toUpperCase()}</span></div>
-          <div>BACKGROUND TRIGGERS · <span style={{ color: diag.triggersAPI ? '#4fe9ff' : '#ff9500' }}>{diag.triggersAPI ? 'SUPPORTED' : 'NOT IN THIS BROWSER'}</span></div>
-          <div>SCHEDULED · <span style={{ color: diag.registered > 0 ? '#4fe9ff' : 'var(--ink-faint)' }}>{diag.registered} / {diag.plannedCount} pings</span></div>
-          {diag.plannedFirst && (
-            <div>NEXT PLANNED · <span style={{ color: 'var(--ink-dim)' }}>{fmtTime(diag.plannedFirst)}</span></div>
-          )}
-          {!diag.triggersAPI && (
-            <div style={{
-              marginTop: 8, paddingTop: 8,
-              borderTop: '1px solid rgba(255,149,0,0.2)',
-              fontFamily: 'var(--serif)', fontStyle: 'italic',
-              fontSize: 12, color: 'rgba(255,255,255,0.65)',
-              letterSpacing: 0, lineHeight: 1.45,
-            }}>
-              This browser won't wake the app for scheduled pings. You'll only be nudged when you open Time Warp after the scheduled time.
-            </div>
-          )}
-        </div>
-      )}
+      {/* Live delivery status. Green when the server has a Push
+          subscription for this device — that's the path that actually
+          fires pings at scheduled times. Amber states explain exactly
+          which piece is missing. */}
+      {!muted && diag && (() => {
+        const good = diag.pushSubscribed && diag.vapidConfigured;
+        return (
+          <div style={{
+            marginTop: 12, padding: '10px 12px', borderRadius: 10,
+            background: good ? 'rgba(79, 233, 255, 0.06)' : 'rgba(255, 149, 0, 0.08)',
+            border: `1px solid ${good ? 'rgba(79, 233, 255, 0.2)' : 'rgba(255, 149, 0, 0.25)'}`,
+            fontFamily: 'var(--mono)', fontSize: 10,
+            color: 'var(--ink-dim)', letterSpacing: '0.08em', lineHeight: 1.7,
+          }}>
+            <div>PERMISSION · <span style={{ color: diag.permission === 'granted' ? '#4fe9ff' : '#ff9500' }}>{diag.permission.toUpperCase()}</span></div>
+            <div>WEB PUSH · <span style={{ color: diag.pushSubscribed ? '#4fe9ff' : '#ff9500' }}>
+              {!diag.vapidConfigured ? 'VAPID KEY NOT SET' :
+               !diag.pushAPI ? 'NOT IN THIS BROWSER' :
+               diag.pushSubscribed ? 'SUBSCRIBED' : 'NOT SUBSCRIBED'}
+            </span></div>
+            {diag.pushEndpointHost && (
+              <div>PUSH SERVICE · <span style={{ color: 'var(--ink-dim)' }}>{diag.pushEndpointHost}</span></div>
+            )}
+            <div>LOCAL TRIGGERS · <span style={{ color: diag.triggersAPI && diag.registered > 0 ? '#4fe9ff' : 'var(--ink-faint)' }}>{diag.registered} / {diag.plannedCount}</span></div>
+            {diag.plannedFirst && (
+              <div>NEXT PLANNED · <span style={{ color: 'var(--ink-dim)' }}>{fmtTime(diag.plannedFirst)}</span></div>
+            )}
+            {!good && (
+              <div style={{
+                marginTop: 8, paddingTop: 8,
+                borderTop: '1px solid rgba(255,149,0,0.2)',
+                fontFamily: 'var(--serif)', fontStyle: 'italic',
+                fontSize: 12, color: 'rgba(255,255,255,0.65)',
+                letterSpacing: 0, lineHeight: 1.45,
+              }}>
+                {!diag.vapidConfigured
+                  ? 'Server-side pushes are disabled on this build — VAPID public key not set. You\'ll only be nudged when you open the app after the scheduled time.'
+                  : !diag.pushAPI
+                  ? 'This browser doesn\'t support Web Push. You\'ll only be nudged when you open the app after the scheduled time.'
+                  : 'Push isn\'t subscribed yet. Toggle notifications off and on to retry, or check that you granted permission.'}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <button
         onClick={runTestPing}

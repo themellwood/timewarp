@@ -4,10 +4,12 @@ compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Cron triggers:
-#   hourly — refresh the world aggregate JSON
-#   0:05 UTC — dump the previous day's submissions as CSV to R2
+#   0 * * * *   — hourly: refresh world/latest.json + cohorts/latest.json
+#   5 0 * * *   — daily: dump previous UTC day as CSV to R2
+#   */5 * * * * — every 5 minutes: fan out Web Push notifications to
+#                 subscribers whose local time is inside their wake window.
 [triggers]
-crons = ["0 * * * *", "5 0 * * *"]
+crons = ["0 * * * *", "5 0 * * *", "*/5 * * * *"]
 
 # D1 database for submissions.
 # Create once:  wrangler d1 create timewarp_db
